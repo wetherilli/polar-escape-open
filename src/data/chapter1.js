@@ -1,10 +1,14 @@
 // ─────────────────────────────────────────────
 // 1장 — 작가 개요 (2026-10-04)
-//  캠벨 만나기 → 캠벨에게 렐의 행방 묻기 → 렐을 찾아 연구동으로 → 제1연구동 6층 광학현미경실로.
+//  렐을 찾아 연구지원동 306호로 → 캠벨에게 렐의 행방 묻기 → 렐을 찾아 연구동으로 → 제1연구동 6층 광학현미경실로.
+//  수오가 아는 연구소 사람은 렐뿐이라 306호로 가지만, 렐은 자리에 없고 캠벨만 있다. 자초지종을 설명해 줄 사람은 캠벨뿐.
+//  캠벨은 영어밖에 못 해서, 사이드 퀘스트로 연구지원동 2층에서 번역기를 찾는다(작가 설명 2026-10-04).
 //  제1연구동 계단은 4층에서 5층으로 오르는 곳이 무너져 있어서, 4층부터 6층까지는 다른 계단으로 간다.
 //
 // 진행은 퀘스트 'ch1'(quests.js)의 단계로 센다.
-//   0 캠벨 만나기  1 렐의 행방 묻기  2 연구동으로  3 6층 광학현미경실로  4 (무너진 계단을 본 뒤) 다른 계단으로 6층
+//   0 306호로(들어서면 넘어감)  1 렐의 행방 묻기  2 연구동으로  3 6층 광학현미경실로  4 (무너진 계단을 본 뒤) 다른 계단으로 6층
+// 사이드 퀘스트 'translator': 캠벨을 처음 만난 뒤 시작, 2층 회의실의 번역기를 주우면 완료.
+//   번역기는 자막만 켜 준다 — 영어를 읽는 플레이어는 없이도 1장을 끝낼 수 있다.
 //
 // ※ 대사는 전부 자리표시. '(장면 — 대사 미정)' 줄을 작가 대사로 바꾸면 된다.
 //   캠벨 대사는 campbell(c, 영어, 한국어 자막) — 자막은 번역기가 있을 때만 보인다.
@@ -49,12 +53,29 @@ export const CH1 = {
     c.objective(null); // 목표 줄을 1장 퀘스트로 돌려놓는다
   },
 
+  // 306호에 들어섬 — 렐의 자리는 비어 있고 캠벨만 있다 (0 → 1)
+  async enter306(c) {
+    if (c.quest.stage('ch1') !== 0) return;
+    await c.say('(306호 — 렐은 자리에 없고 캠벨만 있다. 대사 미정)');
+    c.quest.next('ch1');
+  },
+
+  // 연구지원동 2층 회의실의 번역기 (사이드 퀘스트 'translator')
+  async findTranslator(c) {
+    if (c.has('translator')) return;
+    await c.say('(회의실에서 번역기를 찾음 — 대사 미정)');
+    await c.give('translator');
+    if (!c.quest.started('translator')) c.quest.start('translator');
+    c.quest.done('translator');
+  },
+
   // 306호에서 캠벨을 처음 만남
   async meetCampbell(c) {
     if (!c.quest.started('ch1')) c.quest.start('ch1');
     await campbell(c, '(First meeting — Campbell\'s lines in English, TBD)', '(한국어 자막 — 미정)');
     await c.say('(수오 반응 — 대사 미정)', '수오');
     c.note.add('campbell'); // 노트 「대학원생 — Campbell」
+    if (!c.has('translator')) c.quest.start('translator'); // 영어라 알아듣기 어렵다 → 사이드 퀘스트 「번역기 찾기」
     if (c.quest.stage('ch1') === 0) c.quest.next('ch1');
   },
 

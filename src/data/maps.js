@@ -12,8 +12,8 @@
 // 맵 필드
 //  name     화면 왼쪽 위 표시 이름
 //  rows     타일 문자열.  #=벽  .=바닥  W=창문  ==책상  R=선반  G=설비  V=아래층이 내다보이는 트인 공간(난간)
-//                         ,=창고 바닥  :=보도  _=차도  ;=잔디  |=주차장  T=나무  *=화단  H=건물 외벽  F=부지 경계
-//                         (. , : _ ; | 빼고 통과 불가)
+//                         ,=창고 바닥  :=보도  _=차도  ;=잔디  |=주차장  P=필로티(건물 1층 차량 통로)  T=나무  *=화단  H=건물 외벽  F=부지 경계
+//                         (. , : _ ; | P 빼고 통과 불가)
 //           소문자(a-z) = 이벤트 위치 → events[글자]. 같은 글자를 여러 칸에 써도 된다.
 //  cold     { seconds, exit:[맵, 앵커, 방향] } — 체온이 seconds초 동안 바닥나면 exit로 이동
 //  tint     화면 색조 (rgba 문자열)
@@ -37,14 +37,14 @@
 //              (도착 칸 = 앵커 칸에서 그 방향으로 한 칸)
 // ─────────────────────────────────────────────
 
-import { PROLOGUE, PROLOGUE_START, STAFF } from './prologue.js?v=0.19.0';
-import { NPCS, EXAMPLE_ITEM } from './npcs.js?v=0.19.0';
-import { CH1 } from './chapter1.js?v=0.19.0';
-import { CREATURES } from './creatures.js?v=0.19.0';
-import { ITEMS } from './items.js?v=0.19.0';
-import { josa } from '../text.js?v=0.19.0';
-import { pickEnding } from './endings.js?v=0.19.0';
-import { helpTags } from '../state.js?v=0.19.0';
+import { PROLOGUE, PROLOGUE_START, STAFF } from './prologue.js?v=0.20.0';
+import { NPCS, EXAMPLE_ITEM } from './npcs.js?v=0.20.0';
+import { CH1 } from './chapter1.js?v=0.20.0';
+import { CREATURES } from './creatures.js?v=0.20.0';
+import { ITEMS } from './items.js?v=0.20.0';
+import { josa } from '../text.js?v=0.20.0';
+import { pickEnding } from './endings.js?v=0.20.0';
+import { helpTags } from '../state.js?v=0.20.0';
 
 export const START = PROLOGUE_START;
 
@@ -122,28 +122,32 @@ const savePoint = {
 //  opts.lo  = 이 계단이 닿는 가장 낮은 층. 그 아래 층은 목록에 안 나온다(floors에는 null로 둔다)
 //  opts.cut = 이 층과 바로 위층 사이가 무너져 있음. 사이를 건너려 하면 막히고 opts.onCut(c)를 부른다
 const CUT_MSG = '(계단이 무너져 있어 지나갈 수 없다 — 문구 미정)';
+//  opts.below = 지하층 맵 id 목록 [지하 1층, 지하 2층 …]. 지하층에서는 here가 -1, -2 …
 const floorPicker = (kind, label, anchor, floors, here, dir = 'left', opts = {}) => async (c) => {
-  const nums = floors.map((_, i) => i + 1).filter((n) => n >= (opts.lo ?? 1));
-  const labels = nums.map((n) => `${n}층${n === here ? ' (지금)' : ''}`);
+  const list = [
+    ...(opts.below ?? []).map((map, i) => ({ n: -(i + 1), map, name: `지하 ${i + 1}층` })).reverse(),
+    ...floors.map((map, i) => ({ n: i + 1, map, name: `${i + 1}층` })).filter((f) => f.n >= (opts.lo ?? 1)),
+  ];
+  const labels = list.map((f) => `${f.name}${f.n === here ? ' (지금)' : ''}`);
   const pick = await c.choose(`[${label} ${kind}] 몇 층으로 갈까요?`, [...labels, '그만둔다']);
-  const to = nums[pick];
-  if (!to || to === here) return;
-  if (opts.cut && (here <= opts.cut) !== (to <= opts.cut)) {
+  const to = list[pick];
+  if (!to || to.n === here) return;
+  if (opts.cut && (here <= opts.cut) !== (to.n <= opts.cut)) {
     await sayLocked(c, CUT_MSG);
     return opts.onCut?.(c);
   }
-  if (!floors[to - 1]) return sayLocked(c, lockedMsg(`${label} ${to}층`));
-  await c.transfer(floors[to - 1], anchor, dir);
+  if (!to.map) return sayLocked(c, lockedMsg(`${label} ${to.name}`));
+  await c.transfer(to.map, anchor, dir);
 };
 const stairs = (label, anchor, floors, here, dir = 'left', opts = {}) => ({
-  sprite: 'stairs', solid: true, trigger: 'touch', floors, anchor, dir, lo: opts.lo, // floors·anchor·dir·lo는 check.mjs·편집기가 본다
+  sprite: 'stairs', solid: true, trigger: 'touch', floors, below: opts.below, anchor, dir, lo: opts.lo, // floors·below·anchor·dir·lo는 check.mjs·편집기가 본다
   run: floorPicker('계단', label, anchor, floors, here, dir, opts),
 });
 // 엘리베이터: unlockFlag가 켜지기 전에는 쓸 수 없다
-const elevator = (label, anchor, floors, here, unlockFlag, dir = 'left') => ({
-  sprite: 'elevator', solid: true, trigger: 'action', lockFlag: unlockFlag, floors, anchor, dir,
+const elevator = (label, anchor, floors, here, unlockFlag, dir = 'left', opts = {}) => ({
+  sprite: 'elevator', solid: true, trigger: 'action', lockFlag: unlockFlag, floors, below: opts.below, anchor, dir,
   run: (c) => (c.flag(unlockFlag)
-    ? floorPicker('엘리베이터', label, anchor, floors, here, dir)(c)
+    ? floorPicker('엘리베이터', label, anchor, floors, here, dir, opts)(c)
     : c.say('(엘리베이터 — 아직 쓸 수 없다. 해금 조건·대사 미정)')),
 });
 // 대학원생의 도움으로 열리는 문 (helps.js effects.open에 tag가 있는 도움을 받으면 열린다). 그 전에는 잠겨 있다
@@ -177,138 +181,147 @@ const FLOORS = {
 const r1Stairs = (here) => stairs('제1연구동', 'x', FLOORS.r1, here, 'left', { cut: 4, onCut: CH1.stairsCollapsed });
 const r1Stairs2 = (here) => stairs('제1연구동 계단2', 'y', FLOORS.r1b, here, 'right', { lo: 4 });
 
+// 연구지원동 북서동: 계단 둘과 엘리베이터 모두 지하 1층(주차장)까지 간다. here: 1~3층, 지하 1층은 -1
+const SUPA_BELOW = ['supA_b1'];
+const supAStairs = (n, anchor, here) => stairs(`연구지원동 북서동 계단${n}`, anchor, FLOORS.supA, here, 'right', { below: SUPA_BELOW });
+const supAElevator = (here) => elevator('연구지원동 북서동', 'e', FLOORS.supA, here, SUP_ELEVATOR, 'right', { below: SUPA_BELOW });
+
 export const MAPS = {
   // ── 캠퍼스 야외 (허브) ──
   // 위가 교차로 쪽(북동), 아래가 송도국제대로343번길 쪽(남서). 지도를 건물 줄 방향으로 세워 그렸다.
   // 축척: 한 칸 ≈ 2m. 캠퍼스 블록 약 150m(가로, 북서–남동) × 250m(세로, 북동–남서) = 75 × 125칸 (작가 설명 2026-10-04)
-  // 건물 크기·위치는 출입문 관계만 맞춘 임시 배치. 줄은 tools/mapview.html 편집기로 고쳐도 된다.
+  // 배치는 작가가 위성 사진 위에 그려 준 구조도를 따른다(2026-10-04): 북동 끝 본관(저층·고층, 앞에 회차로),
+  // 가운데 제1·2·3연구동(남동 끝끼리 연결, 북서 끝 1층은 필로티라 차가 지나감), 북서쪽에 지상 주차장·극지지원동·하역장,
+  // 남서쪽에 연구지원동 두 동·지하주차장 입구·풋살장·기숙사동. 주입구는 남동 변, 화물 입구는 북서 변.
+  // 차량 동선: 주입구 → 회차로 → 본관과 제1연구동 사이 → 연구동 필로티를 지나 남서쪽 → 지하주차장 입구.
+  // 건물 크기는 사진에서 어림한 값. 줄은 tools/mapview.html 편집기로 고쳐도 된다.
   campus: {
     name: '극지연구소 (야외)',
     rows: [
       'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF',
       'F:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::F',
       'F:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::F',
-      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;:::::::::::::::::::::::::::::::::::::;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;:::::::::::::::::::::::::::::::::::::;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHaHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
-      'F;;;T;;;;T;;;;T;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;T;;;T;;;F',
-      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;T;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
-      'F;;;T;;;;;;;;;T;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;HHHH;;;F',
-      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHjHHHHHHHHHHHHHHHH;;;;HHHH;;;F',
-      'F;;;;;;;;;;;;;;;;;;;;;;;;;::::::::**:::::::::::::::::::::**::::::;;HHHH;;;F',
-      'F;;;;;;;;;;;;;;;;;;;;;;;;;:::::::::::::::::::::::::::::::::::::::;;HvHH;;;F',
-      'F;;;;;;;;T;;;;;;;;;;::::::::::::::::::::::::::::::::::::::::::::::::::::::F',
-      'F;;;;;;;;;;;;;;;;;;;::::::::::::::::::::::::::::::::::::::::::::::::::::::F',
-      'F;;;;;;;;;;;;;;;;;;;::____________________________________________________g',
-      'F;;;;;;;;;;;;;;;;;;;::____________________________________________________g',
-      'F;;;;;;;;;;;;;;;;;;;::____________________________________________________g',
-      'F;;;;;;;;;;;;;;;;;;;::___:::::::::::::::::::::::::::::::::::__::::::::::::F',
-      'F;;;;;;;;;;;;;;;;;;;::___:::::::::::::::::::::::::::::::::::__::::::::::::F',
-      'F;;;;;;;;;;;;;;;;;;;::___::::::::*:::::::::::::*:::::::::;;;__;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::::::::::::::::::::::::::::::::;;;__;;;;;;;;;;;;F',
-      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHkHHHHHHHHHHHH;;;;;;;__;;;;;;;;;;;;F',
-      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;|||||||||||||||;;F',
-      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;|||||||||||||||;;F',
-      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;|||||||||||||||;;F',
-      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;|||||||||||||||;;F',
-      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;_______________;;F',
-      'F;;;HHHHHHHHHHHHHp::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;_______________;;F',
-      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;|||||||||||||||;;F',
-      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;|||||||||||||||;;F',
-      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;|||||||||||||||;;F',
-      'F;;;HHHHHHHHHHHHHH::::___::bHHHHHHHHHHHHHHHHHHHHHHHHH;;;;|||||||||||||||;;F',
-      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;::::::::::::::::::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;::::::::::::::::::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;HHHeHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;T;;;;;;;;;;;T;F',
-      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;T;F',
-      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;HHHHHHHH;;HHHHf::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;HHHHHHHr;;HHHHH::::___::cHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;T;;;;;T;F',
-      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;HHHHHHHH;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;T;F',
-      'F;;HHHHHHHH;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;HHHHHHHH;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;HHHHHHHH;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;HHHHHHHH;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;HHHHHHHH;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;T;;;;;;;;;;;T;F',
-      'F;;HHHHHHHH;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;HHHHHHHH;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;T;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;T;;;;;;;T;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;T;;;;;T;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::dHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;T;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;T;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;T;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHlHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;x;;;;;;;;;;;::___:::::::::::::::::::::::::::::::::;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___:::::::::::::::::::::::::::::::::;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;T;;;;;::___::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::::::::::::::::::::::::::::::::::;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::::::::::::::::::::::::::::::::::;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHhHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;T;;;T;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
-      'F;;;T;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;T;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;T;;;T;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;::___::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
-      'F:::::::::::::::::::::___:::::::::::::::::::::::::::::::::::::::::::::::::F',
-      'F:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::F',
-      'F:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::F',
-      'F:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::F',
+      'F;;;;;;;;;;;;;;;;;;;::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::;F',
+      'F;;;;;;;;;;;;;;;;;;;::;;;;;;;;;;;;;;:::::::::;;;;;;;;;;;;;;;;;;;T;;;;;:::;F',
+      'F;;;;T;;;;;;;;;;;;;;::;;;;T;;;;;;;;;:::::::::;;;;;T;;;;;;;;;;;;;;;;;;;:::;F',
+      'F;;;;;;;;;;;T;;;;;;;::;;;;;;;;;;;;;;:::::::::;;;;;;;;;;;;;;;;;;;;;;;;;:::;F',
+      'F;;;;;;;;;;;;;;;;;;;::;;;;;;;;;;;;;;:::::::::;;;;;;;;;;;;;;;;;;;;;;;;;:::;F',
+      'F;;;;;;;;;;;;;;;;;;;::::::::::::::::::::::::::;;;;;;;;;;;;T;;;;;;;;;;;:::;F',
+      'F;;;;;;;;;;;;;;;;;;;::::::::::::::::::::::::::;;;;;;;;;;;;;;;;;;;;;;;;:::;F',
+      'F;;;;;;;;;;;;;;;;;;;::;;;;;;;;;;;;;;::*:::*::;;;;;;;;;;;;;;;;;;;;;;;;;:::;F',
+      'F;;;;;;;;;;;;;;;;;;;::;;;;;;;;;;;;;;:::::::::;;;;;;;;;;;;;;;;;;;;;;;;;:::;F',
+      'F;;;;;;;;;;;;;;;T;;;::;;;;;;;;;;;;;;:::::::::;;;T;;;;;;;;;;;;;T;;;;;;;:::;F',
+      'F;;;;;;;;;;;;;;;;;;;::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::;F',
+      'F;;;;;;;;;;;;;;;;;;;::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::;F',
+      'F;;;;;;;:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::;F',
+      'F;;;;;;;:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;*;;;*;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHH;;;;;:::;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHH;;;;;:::;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHHHHHaHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;:::;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;:::;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;:::;F',
+      'F;;T;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;:::;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;:::;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;:::;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;:::;F',
+      'F;;;;;;T;;HHHHHHHHHHHHHHHHHHHHjHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;HHHH:::;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHH;HHHH:::;F',
+      'F;;;;;;;;;;;:::::::::::::::::::::::::::::::::::::::::___________::HvHH::::F',
+      'F;;;;;;;;;;;:::::::::::::::::::::::::::::::::::::::::___________::::::::::F',
+      'F;;;;;;;;;;;:::::::::::::::::::::::::::::::::::::::::___________::::::::::F',
+      'F;;;;;;;;;;;;;____________________________________________________________g',
+      'F;;;;;;;;;;;;;___________________________________________***______________g',
+      'F;;;;;;;;;;;;;___________________________________________***______________g',
+      'F;;;;;;;;;;;::::::___:::::::::::::____:::::::::::::::____***____::::::::::F',
+      'F;;;;;;;;;;;::::::___:::::::::::::____:::::::::::::::___________::::::::::F',
+      'F;;;;;;;;;;;::::::___:::::::::::::____:::::::::::::::___________::::::::::F',
+      'F;;;;;;;;;;;;;;;;;___;;;;;;;::;;;;____;;;;;;;;;;;;;;;___________;;;;;;;;;;F',
+      'F;;;;;;;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;;;;;___________;;;;;;;;;;F',
+      'F;;;;;;;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;||||||||||||||||::PPPPPPPPHHkHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;;;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;;;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;T;;;;;;;F',
+      'F;;;;;;;;;;;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;;;||||||||||||||||::PPPPPPPPbHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;x;;;;;;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;;;________________::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;;;________________::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;;;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;T;;;F',
+      'F;;;;;;;;;;;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;||||||||||||||||::;;;;____;;T;;;;;T;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;T;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;T;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPcHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;T;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;T;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;T;;;;;;HHHHHHHHHHHHHHHHp;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;T;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;T;;;;;T;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;;;T;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;T;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPdHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;T;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHlHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;;;;;;;;;;;;;;;T;;;;;;;F',
+      'F_____________________________________;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
+      'i_____________________________________;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
+      'F_____________________________________;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
+      'F________________;;;;;HqHH;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
+      'F________________;;;;;HHHH;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
+      'F________________;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
+      'F________________;;HHHHHHHeHHHHHHHH;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;T;;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHf;;;;;;;;;;;;;;;;;;;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;;HHHHHHHhHHHHHHHH;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHH;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHH;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHH;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHH;;F',
+      'F________________;;HHHHHHHHHHHHHHHr;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHH;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHH;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHH;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHH;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;FFFFFFFF;FFFFFFFFF;HHHHHHHHHHHHHHHH;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;F;;;;;;;;;;;;;;;;F;;;;;;;;;;;;;;;;;;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;F;;;;;;;;;;;;;;;;F;;;;;;;;;;;;;;;;;;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;F;;;;;;;;;;;;;;;;F;;;;;;;;;;;;;;;;;;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;F;;;;;;;;;;;;;;;;F;;;;;T;;;;;;;;;;;;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;F;;;;;;;;;;;;;;;;F;;;;;;;;;;;;;;;;;;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;F;;;;;;;;;;;;;;;;F;;;;;;;;;;;T;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHH;;F;;;;;;;;;;;;;;;;F;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHH;;F;;;;;;;;;;;;;;;;F;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F;;;;;;;;;;;;;;;;F;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;FFFFFFFFFFFFFFFFFF;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
       'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF',
     ],
     onEnter: PROLOGUE.arrive,
@@ -335,6 +348,8 @@ export const MAPS = {
       f: dayLocked(entrance('door', 'supB_1f', 'o', 'right')),          // 연구지원동 남동동
       h: dayLocked(entrance('door', 'dorm_1f', 'o', 'up')),             // 기숙사동
       x: creatureSpot('exampleBugOut'),                             // 소동물 예시 (바깥)
+      q: dayLocked(entrance('gate', 'supA_b1', 's', 'left')),          // 지하주차장 입구 (연구지원동 북서동 지하 1층)
+      i: look('gate', '(화물 입구 — 닫혀 있다. 문구 미정)'),            // 화물 입구 (하역장 쪽, 닫힘)
     },
   },
 
@@ -360,7 +375,7 @@ export const MAPS = {
       j: entrance('glassDoor', 'campus', 'j', 'down'), // 남서문
       b: look('panel', '(전시 패널 — 조사 텍스트)'),
       g: look('note', '(출입 신고소 — 조사 텍스트)'),
-      t: lockedRoom('화장실 (본관 1층)'),
+      t: door('wcDoor', 'wc_main_1f', 'o'), // 화장실
     },
   },
 
@@ -432,9 +447,9 @@ export const MAPS = {
       u: entrance('glassDoor', 'campus', 'l', 'down'),  // 남서문
       m: lockedRoom('운석보관 클린룸'),
       r: creatureSpot('exampleBugIn'), // 소동물 예시 (안)
-      w: lockedRoom('화장실 (제1연구동 1층)'),
-      v: lockedRoom('화장실 (제2연구동 1층)'),
-      t: lockedRoom('화장실 (제3연구동 1층)'),
+      w: door('wcDoor', 'wc_r1_1f', 'o'), // 제1연구동 화장실
+      v: door('wcDoor', 'wc_r2_1f', 'o'), // 제2연구동 화장실
+      t: door('wcDoor', 'wc_r3_1f', 'o'), // 제3연구동 화장실
     },
   },
 
@@ -483,10 +498,10 @@ export const MAPS = {
       q: lockedRoom('제2연구동 2층 방'),
       r: lockedRoom('제3연구동 2층 방'),
       a: creatureSpot('exampleFish', { sprite: 'tank', fixture: true }), // 소동물 예시 (수조)
-      b: lockedRoom('화장실 (본관 2층)'),
-      c: lockedRoom('화장실 (제1연구동 2층)'),
-      d: lockedRoom('화장실 (제2연구동 2층)'),
-      e: lockedRoom('화장실 (제3연구동 2층)'),
+      b: door('wcDoor', 'wc_main_2f', 'o'), // 본관 화장실
+      c: door('wcDoor', 'wc_r1_2f', 'o'), // 제1연구동 화장실
+      d: door('wcDoor', 'wc_r2_2f', 'o'), // 제2연구동 화장실
+      e: door('wcDoor', 'wc_r3_2f', 'o'), // 제3연구동 화장실
     },
   },
 
@@ -542,7 +557,7 @@ export const MAPS = {
     events: {
       x: r1Stairs(3),
       a: lockedRoom('제1연구동 3층 방'),
-      t: lockedRoom('화장실 (제1연구동 3층)'),
+      t: door('wcDoor', 'wc_r1_3f', 'o'), // 화장실
     },
   },
   r1_4f: {
@@ -557,7 +572,7 @@ export const MAPS = {
       x: r1Stairs(4),
       y: r1Stairs2(4),
       a: lockedRoom('제1연구동 4층 방'),
-      t: lockedRoom('화장실 (제1연구동 4층)'),
+      t: door('wcDoor', 'wc_r1_4f', 'o'), // 화장실
     },
   },
   r1_5f: {
@@ -572,7 +587,7 @@ export const MAPS = {
       x: r1Stairs(5),
       y: r1Stairs2(5),
       a: lockedRoom('제1연구동 5층 방'),
-      t: lockedRoom('화장실 (제1연구동 5층)'),
+      t: door('wcDoor', 'wc_r1_5f', 'o'), // 화장실
     },
   },
   r1_6f: {
@@ -588,7 +603,7 @@ export const MAPS = {
       y: r1Stairs2(6),
       o: door('labDoor', 'r1_optics', 'o', 'up'), // 광학현미경실
       a: lockedRoom('제1연구동 6층 방'),
-      t: lockedRoom('화장실 (제1연구동 6층)'),
+      t: door('wcDoor', 'wc_r1_6f', 'o'), // 화장실
     },
   },
   // 광학현미경실 — 1장의 목적지. 안쪽 배치는 임시
@@ -672,9 +687,9 @@ export const MAPS = {
     events: {
       o: entrance('glassDoor', 'campus', 'e', 'up'),    // 북동쪽 출입문
       r: entrance('glassDoor', 'campus', 'r', 'right'), // 남동쪽 출입문 (트인 공간 쪽)
-      y: stairs('연구지원동 북서동 계단2', 'y', FLOORS.supA, 1, 'right'),
-      x: stairs('연구지원동 북서동 계단1', 'x', FLOORS.supA, 1, 'right'),
-      e: elevator('연구지원동 북서동', 'e', FLOORS.supA, 1, SUP_ELEVATOR, 'right'),
+      y: supAStairs(2, 'y', 1),
+      x: supAStairs(1, 'x', 1),
+      e: supAElevator(1),
       w: door('wcDoor', 'supA_wc', 'o', 'down'),
       h: { sprite: 'fireBox', solid: true, trigger: 'action', run: CH1.fireBox }, // 소방함 — 비상용 손전등
       k: { sprite: 'register', solid: true, trigger: 'action', run: PROLOGUE.cafeCounter },
@@ -727,13 +742,13 @@ export const MAPS = {
       '#####j#####',
     ],
     events: {
-      y: stairs('연구지원동 북서동 계단2', 'y', FLOORS.supA, 2, 'right'),
-      x: stairs('연구지원동 북서동 계단1', 'x', FLOORS.supA, 2, 'right'),
-      e: elevator('연구지원동 북서동', 'e', FLOORS.supA, 2, SUP_ELEVATOR, 'right'),
-      g: lockedRoom('회의실'),
+      y: supAStairs(2, 'y', 2),
+      x: supAStairs(1, 'x', 2),
+      e: supAElevator(2),
+      g: door('labDoor', 'supA_mr1', 'o'), // 회의실
       f: lockedRoom('강의실'),
-      j: lockedRoom('회의실 (남서쪽)'),
-      w: lockedRoom('화장실 (2층)'),
+      j: door('labDoor', 'supA_mr2', 'o'), // 회의실 (남서쪽)
+      w: door('wcDoor', 'wc_supA_2f', 'o'), // 화장실
       n: door('door', 'supB_2f', 'n', 'right'), // 구름다리 → 남동동
     },
   },
@@ -749,7 +764,7 @@ export const MAPS = {
       '###g...####',
       '####...####',
       '###d...####',
-      '####...m###',
+      '####...n###',
       '####...####',
       '####...VVV#',
       '###h...VVV#',
@@ -766,17 +781,18 @@ export const MAPS = {
       '###########',
     ],
     events: {
-      y: stairs('연구지원동 북서동 계단2', 'y', FLOORS.supA, 3, 'right'),
-      x: stairs('연구지원동 북서동 계단1', 'x', FLOORS.supA, 3, 'right'),
-      e: elevator('연구지원동 북서동', 'e', FLOORS.supA, 3, SUP_ELEVATOR, 'right'),
+      y: supAStairs(2, 'y', 3),
+      x: supAStairs(1, 'x', 3),
+      e: supAElevator(3),
       f: roomDoor('306호', 'supA_306', 'o', 'up'),
-      m: roomDoor('305호 (화석실험실)'),
+      m: roomDoor('305호 (화석연구실)', 'supA_305', 'o'), // 305호 앞문
+      n: roomDoor('305호 (화석연구실)', 'supA_305', 'p'), // 305호 뒷문
       b: roomDoor('302호'),
       a: roomDoor('301호'),
       g: roomDoor('창고'),
       d: roomDoor('304호'),
       h: roomDoor('303호 (장비창고)'),
-      w: lockedRoom('화장실 (3층)'),
+      w: door('wcDoor', 'wc_supA_3f', 'o'), // 화장실
     },
   },
   // 306호 — 5인 사무실. 지금 자리에 있는 사람은 캠벨뿐이다. 불 켜진 방.
@@ -786,6 +802,7 @@ export const MAPS = {
   //  책상은 2×2 칸, 조사는 통로 쪽 칸에서.
   supA_306: {
     name: '연구지원동 306호',
+    onEnter: CH1.enter306,
     lit: true,
     rows: [
       '#########',
@@ -870,6 +887,280 @@ export const MAPS = {
     events: {
       s: stairs('기숙사동', 's', FLOORS.dorm, 1),
       o: entrance('door', 'campus', 'h', 'up'),
+    },
+  },
+
+  // ── 화장실 (v0.20.0) — 모두 같은 꼴: 칸막이 셋, 세면대. 문은 아래쪽 벽 ──
+  wc_main_1f: {
+    name: '화장실 (본관 1층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'main_1f', 't'),
+    },
+  },
+  wc_main_2f: {
+    name: '화장실 (본관 2층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'research_2f', 'b'),
+    },
+  },
+  wc_r1_1f: {
+    name: '화장실 (제1연구동 1층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'research_1f', 'w'),
+    },
+  },
+  wc_r2_1f: {
+    name: '화장실 (제2연구동 1층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'research_1f', 'v'),
+    },
+  },
+  wc_r3_1f: {
+    name: '화장실 (제3연구동 1층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'research_1f', 't'),
+    },
+  },
+  wc_r1_2f: {
+    name: '화장실 (제1연구동 2층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'research_2f', 'c'),
+    },
+  },
+  wc_r2_2f: {
+    name: '화장실 (제2연구동 2층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'research_2f', 'd'),
+    },
+  },
+  wc_r3_2f: {
+    name: '화장실 (제3연구동 2층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'research_2f', 'e'),
+    },
+  },
+  wc_r1_3f: {
+    name: '화장실 (제1연구동 3층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'r1_3f', 't'),
+    },
+  },
+  wc_r1_4f: {
+    name: '화장실 (제1연구동 4층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'r1_4f', 't'),
+    },
+  },
+  wc_r1_5f: {
+    name: '화장실 (제1연구동 5층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'r1_5f', 't'),
+    },
+  },
+  wc_r1_6f: {
+    name: '화장실 (제1연구동 6층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'r1_6f', 't'),
+    },
+  },
+  wc_supA_2f: {
+    name: '화장실 (연구지원동 북서동 2층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'supA_2f', 'w'),
+    },
+  },
+  wc_supA_3f: {
+    name: '화장실 (연구지원동 북서동 3층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'supA_3f', 'w'),
+    },
+  },
+
+  // ── 연구지원동 북서동 2층 회의실 둘 (v0.20.0) — 안쪽 배치는 임시 ──
+  // 회의실: 창고·304·303 자리(복도 왼쪽, 북서). 문은 오른쪽 벽, 창은 왼쪽(바깥) 벽
+  supA_mr1: {
+    name: '회의실',
+    rows: [
+      '###b#######',
+      'W.........#',
+      'W.=======.#',
+      'W.===t===.o',
+      'W.........#',
+      '###########',
+    ],
+    events: {
+      o: door('labDoor', 'supA_2f', 'g'),
+      t: { sprite: 'item', solid: true, trigger: 'action', visible: (s) => !s.items.includes('translator'), run: CH1.findTranslator }, // 번역기 (사이드 퀘스트)
+      b: look('panel', '(화이트보드 — 조사 텍스트)'),
+    },
+  },
+  // 회의실 (남서쪽): 2층 남서쪽 끝. 문은 위쪽 벽, 창은 아래(바깥) 벽
+  supA_mr2: {
+    name: '회의실 (남서쪽)',
+    rows: [
+      '#####o#####',
+      '#.........#',
+      '#.=======.b',
+      '#.=======.#',
+      '#.........#',
+      '##WWW#WWW##',
+    ],
+    events: {
+      o: door('labDoor', 'supA_2f', 'j'),
+      b: look('panel', '(화이트보드 — 조사 텍스트)'),
+    },
+  },
+
+  // ── 305호 화석연구실 (v0.20.0) — 3층 복도 오른쪽, 문 둘(앞문 m ↔ o, 뒷문 n ↔ p). 안쪽 배치는 임시 ──
+  supA_305: {
+    name: '305호 화석연구실',
+    rows: [
+      '#########',
+      '#RRRRkRR#',
+      'o.......#',
+      '#.==.==.#',
+      '#.......#',
+      '#.==.==.#',
+      'p.......#',
+      '#GG..RRR#',
+      '#########',
+    ],
+    events: {
+      o: door('labDoor', 'supA_3f', 'm'),
+      p: door('labDoor', 'supA_3f', 'n'),
+      k: look('note', '(화석 표본 — 조사 텍스트)'),
+    },
+  },
+
+  // ── 연구지원동 북서동 지하 1층 주차장 (v0.20.0) — 계단 둘·엘리베이터가 왼쪽 벽. 배치는 임시 ──
+  //  바닥은 콘크리트(,), 주차 칸(|), 기둥(#). 오른쪽 벽의 차량 출입구(s)는 캠퍼스의 지하주차장 입구(q)로 이어진다
+  supA_b1: {
+    name: '연구지원동 북서동 지하 1층 주차장',
+    rows: [
+      '######################',
+      '#,,,,,,,,,,,,,,,,,,,,#',
+      'y,,,,,,,,,,,,,,,,,,,,#',
+      '#,,||||||,,,,||||||,,#',
+      '#,,||||||,,,,||||||,,#',
+      '#,,,,,,,,,,,,,,,,,,,,#',
+      '#,,#,,,,,,#,,,,,,,#,,#',
+      '#,,,,,,,,,,,,,,,,,,,,#',
+      '#,,||||||,,,,||||||,,#',
+      '#,,||||||,,,,||||||,,#',
+      '#,,,,,,,,,,,,,,,,,,,,#',
+      'x,,,,,,,,,,,,,,,,,,,,#',
+      '#,,#,,,,,,#,,,,,,,#,,#',
+      'e,,,,,,,,,,,,,,,,,,,,#',
+      '#,,||||||,,,,||||||,,#',
+      '#,,||||||,,,,||||||,,#',
+      '#,,,,,,,,,,,,,,,,,,,,#',
+      '#,,,,,,,,,,,,,,,,,,,,s',
+      '#,,,,,,,,,,,,,,,,,,,,#',
+      '######################',
+    ],
+    events: {
+      y: supAStairs(2, 'y', -1),
+      x: supAStairs(1, 'x', -1),
+      e: supAElevator(-1),
+      s: dayLocked(entrance('gate', 'campus', 'q', 'up')), // 차량 출입구 ↔ 캠퍼스 지하주차장 입구
     },
   },
 };

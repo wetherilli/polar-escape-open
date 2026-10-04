@@ -1,5 +1,5 @@
-import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.19.0';
-import { ITEMS } from './data/items.js?v=0.19.0';
+import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.20.0';
+import { ITEMS } from './data/items.js?v=0.20.0';
 
 export const FONT = '18px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
 export const SMALL_FONT = '14px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
@@ -131,6 +131,13 @@ const PIXEL_TILES = {
       rect(g, pick(petals, r(k, 2, 3)), x - 1, y, 3, 2);
     }
   },
+  // 필로티: 건물 1층이 뚫려 차가 지나가는 곳 — 위층 그늘이 진 아스팔트 + 가장자리 기둥 그림자
+  pilotis(g, n, r) {
+    PIXEL_TILES.road(g, n, r);
+    rect(g, 'rgba(0, 0, 0, 0.32)', 0, 0, 32, 32);
+    rect(g, ['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.04)'][n], 0, 0, 32, 2);
+    if (r(5, 5, 5) < 0.25) rect(g, ['#6c727b', '#24272d'][n], 12, 12, 8, 8);
+  },
   // 주차장: 아스팔트 + 칸 왼쪽의 흰 주차선
   parking(g, n, r) {
     PIXEL_TILES.road(g, n, r);
@@ -214,6 +221,7 @@ const TILES = {
   T: drawPixelTile('tree'),       // 나무 (통과 불가)
   '*': drawPixelTile('flowerbed'), // 화단 (통과 불가)
   '|': drawPixelTile('parking'),  // 주차장 (주차선)
+  P: drawPixelTile('pilotis'),    // 필로티 (건물 1층을 차가 지나감)
   H(ctx, x, y, o) { // 건물 외벽 — 낮: 밝은 외장 + 하늘이 비친 유리 / 밤: 창 몇 개만 불이 켜져 있다
     if (day(o)) {
       rect(ctx, '#dfe3e8', x, y, T, T);

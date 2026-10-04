@@ -10,7 +10,7 @@
 //   c.say(글, 화자) — 화자를 주면 이름표가 붙는다. 여러 줄은 c.say를 여러 번.
 // ─────────────────────────────────────────────
 
-import { CH1 } from './chapter1.js?v=0.19.0';
+import { CH1 } from './chapter1.js?v=0.20.0';
 
 export const STAFF ={ name: '홍보실 직원', color: '#c0577a' };
 
