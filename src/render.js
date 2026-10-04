@@ -1,5 +1,5 @@
-import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.20.0';
-import { ITEMS } from './data/items.js?v=0.20.0';
+import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.21.0';
+import { ITEMS } from './data/items.js?v=0.21.0';
 
 export const FONT = '18px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
 export const SMALL_FONT = '14px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
@@ -513,7 +513,37 @@ export function drawWorld(ctx, world, player, state, cam, t, follower = null, ch
     const cx = Math.round(chaser.px * T - cam.x), cy = Math.round(chaser.py * T - cam.y);
     (CHASERS[chaser.kind] ?? CHASERS.shark)(ctx, cx, cy, { t, dir: chaser.dir, moving: chaser.moving });
   }
+  drawOverhead(ctx, world, state, cam, x0, y0);
   if (world.def.tint) rect(ctx, world.def.tint, 0, 0, SCREEN_W, SCREEN_H);
+}
+
+// 위층 덮개: 필로티(P) 위의 건물과 맵의 overhead 칸(구름다리 등)을 사람·차 위에 반투명하게 덮는다(작가 지침).
+// 덮개 가장자리에 진한 선을 그어 위층의 테두리가 보이게 한다.
+const OVERHEAD_ALPHA = 0.5;
+function isOverhead(world, tx, ty) {
+  if (tx < 0 || ty < 0 || tx >= world.w || ty >= world.h) return false;
+  if (world.tiles[ty][tx] === 'P') return true;
+  return (world.def.overhead ?? []).some(([x, y, w, h]) => tx >= x && tx < x + w && ty >= y && ty < y + h);
+}
+function drawOverhead(ctx, world, state, cam, x0, y0) {
+  if (world.def.overhead == null && !world.tiles.some((r) => r.includes('P'))) return;
+  const d = !!state.flags.day;
+  ctx.save();
+  ctx.globalAlpha = OVERHEAD_ALPHA;
+  for (let ty = y0; ty <= y0 + SCREEN_H / T + 1; ty++) {
+    for (let tx = x0; tx <= x0 + SCREEN_W / T + 1; tx++) {
+      if (!isOverhead(world, tx, ty)) continue;
+      const x = tx * T - cam.x, y = ty * T - cam.y;
+      rect(ctx, d ? '#dfe3e8' : '#4a5264', x, y, T, T); // 밤에는 건물 외벽보다 밝게 해서 덮개가 보이게
+      const edge = d ? '#8d96a3' : '#11141b';
+      const open = (ax, ay) => !isOverhead(world, ax, ay) && world.tiles[ay]?.[ax] !== 'H'; // 건물(H)과 맞닿은 쪽은 선을 안 긋는다
+      if (open(tx, ty - 1)) rect(ctx, edge, x, y, T, 3);
+      if (open(tx, ty + 1)) rect(ctx, edge, x, y + T - 3, T, 3);
+      if (open(tx - 1, ty)) rect(ctx, edge, x, y, 3, T);
+      if (open(tx + 1, ty)) rect(ctx, edge, x + T - 3, y, 3, T);
+    }
+  }
+  ctx.restore();
 }
 
 // 사람 공용 임시 그림: 몸통 색(body)과 머리 색(head)만 다르게

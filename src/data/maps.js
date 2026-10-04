@@ -20,6 +20,7 @@
 //  lit      true면 불 켜진 방(세이브 포인트가 있는 야근 방 등) — 항상 밝다
 //  onEnter  async (c) => {} 맵에 들어올 때마다 실행
 //  internal true면 공개 배포본에서 뺄 맵 (CLAUDE.md 「공개 범위」)
+//  overhead [[x, y, w, h], …] 위층 덮개 칸 — 사람 위에 반투명하게 그린다(구름다리 등). 필로티 P 칸은 저절로 덮인다
 //
 // 이벤트 필드
 //  sprite   그릴 모양 (render.js SPRITES)
@@ -37,14 +38,14 @@
 //              (도착 칸 = 앵커 칸에서 그 방향으로 한 칸)
 // ─────────────────────────────────────────────
 
-import { PROLOGUE, PROLOGUE_START, STAFF } from './prologue.js?v=0.20.0';
-import { NPCS, EXAMPLE_ITEM } from './npcs.js?v=0.20.0';
-import { CH1 } from './chapter1.js?v=0.20.0';
-import { CREATURES } from './creatures.js?v=0.20.0';
-import { ITEMS } from './items.js?v=0.20.0';
-import { josa } from '../text.js?v=0.20.0';
-import { pickEnding } from './endings.js?v=0.20.0';
-import { helpTags } from '../state.js?v=0.20.0';
+import { PROLOGUE, PROLOGUE_START, STAFF } from './prologue.js?v=0.21.0';
+import { NPCS, EXAMPLE_ITEM } from './npcs.js?v=0.21.0';
+import { CH1 } from './chapter1.js?v=0.21.0';
+import { CREATURES } from './creatures.js?v=0.21.0';
+import { ITEMS } from './items.js?v=0.21.0';
+import { josa } from '../text.js?v=0.21.0';
+import { pickEnding } from './endings.js?v=0.21.0';
+import { helpTags } from '../state.js?v=0.21.0';
 
 export const START = PROLOGUE_START;
 
@@ -161,7 +162,7 @@ const roomDoor = (room, map, anchor, dir) => ({
   run: map ? (c) => c.transfer(map, anchor, dir) : (c) => sayLocked(c, lockedMsg(room)),
 });
 
-// 동별 층 구성. 연구동 3~6층은 동마다 따로 만들 자리(지금은 null).
+// 동별 층 구성. 연구동 3~6층은 동마다 따로(연구동끼리는 1~2층만 이어진다).
 // 연구지원동 엘리베이터 해금 플래그 (해금 조건은 작가가 정한다)
 const SUP_ELEVATOR = 'supElevator';
 
@@ -169,8 +170,8 @@ const FLOORS = {
   main: ['main_1f', 'research_2f'],                           // 본관 (3층 이상 있는지 미확인)
   r1:   ['research_1f', 'research_2f', 'r1_3f', 'r1_4f', 'r1_5f', 'r1_6f'], // 제1연구동 계단1 (4↔5층이 무너짐)
   r1b:  [null, null, null, 'r1_4f', 'r1_5f', 'r1_6f'],         // 제1연구동 계단2 (4~6층만)
-  r2:   ['research_1f', 'research_2f', null, null, null, null], // 제2연구동
-  r3:   ['research_1f', 'research_2f', null, null, null, null], // 제3연구동
+  r2:   ['research_1f', 'research_2f', 'r2_3f', 'r2_4f', 'r2_5f', 'r2_6f'], // 제2연구동
+  r3:   ['research_1f', 'research_2f', 'r3_3f', 'r3_4f', 'r3_5f', 'r3_6f'], // 제3연구동
   supA: ['supA_1f', 'supA_2f', 'supA_3f'],                    // 연구지원동 북서동 (4층 이상 있는지 미확인)
   supB: ['supB_1f', 'supB_2f', 'supB_3f'],                    // 연구지원동 남동동 (3층까지, 계단만)
   polar: ['polar_1f', null],                                  // 극지지원동 (층수 미확인)
@@ -180,6 +181,11 @@ const FLOORS = {
 // 제1연구동 계단1은 4층과 5층 사이가 무너져 있다(1장). 4~6층은 계단2로 오간다.
 const r1Stairs = (here) => stairs('제1연구동', 'x', FLOORS.r1, here, 'left', { cut: 4, onCut: CH1.stairsCollapsed });
 const r1Stairs2 = (here) => stairs('제1연구동 계단2', 'y', FLOORS.r1b, here, 'right', { lo: 4 });
+const r2Stairs = (here) => stairs('제2연구동', 'y', FLOORS.r2, here);
+const r3Stairs = (here) => stairs('제3연구동', 'z', FLOORS.r3, here);
+// 제2·3연구동 계단2: 복도 왼쪽 끝(1·2층은 동 구역의 왼쪽 벽). 1~6층 모두 닿는다
+const r2Stairs2 = (here) => stairs('제2연구동 계단2', 'g', FLOORS.r2, here, 'right');
+const r3Stairs2 = (here) => stairs('제3연구동 계단2', 'h', FLOORS.r3, here, 'right');
 
 // 연구지원동 북서동: 계단 둘과 엘리베이터 모두 지하 1층(주차장)까지 간다. here: 1~3층, 지하 1층은 -1
 const SUPA_BELOW = ['supA_b1'];
@@ -197,6 +203,7 @@ export const MAPS = {
   // 건물 크기는 사진에서 어림한 값. 줄은 tools/mapview.html 편집기로 고쳐도 된다.
   campus: {
     name: '극지연구소 (야외)',
+    overhead: [[35, 102, 2, 2]], // 위층 덮개: 연구지원동 두 동 사이 2층 구름다리 (필로티 P는 저절로 덮인다)
     rows: [
       'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF',
       'F:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::F',
@@ -415,7 +422,7 @@ export const MAPS = {
       '#........#',
       '####..####',
       '#........#',
-      '#........#',
+      'g........#',
       '#........y',
       'c........#',
       '#........f',
@@ -423,7 +430,7 @@ export const MAPS = {
       '#........#',
       '####..####',
       '#........#',
-      '#........#',
+      'h........#',
       '#........z',
       'd........#',
       '#........m',
@@ -437,12 +444,14 @@ export const MAPS = {
       b: entrance('glassDoor', 'campus', 'b', 'left'),  // 북서문 (차도)
       k: door('labDoor', 'nightlab', 'i', 'down'),
       // 제2연구동
-      y: stairs('제2연구동', 'y', FLOORS.r2, 1),
+      y: r2Stairs(1),
+      g: r2Stairs2(1),
       c: entrance('glassDoor', 'campus', 'c', 'left'),  // 북서문 (차도)
       f: door('freezerDoor', 'coldlab', 'f', 'down'),
       q: lockedRoom('전자현미경 분석실'),
       // 제3연구동
-      z: stairs('제3연구동', 'z', FLOORS.r3, 1),
+      z: r3Stairs(1),
+      h: r3Stairs2(1),
       d: entrance('glassDoor', 'campus', 'd', 'left'),  // 북서문 (차도)
       u: entrance('glassDoor', 'campus', 'l', 'down'),  // 남서문
       m: lockedRoom('운석보관 클린룸'),
@@ -475,7 +484,7 @@ export const MAPS = {
       '####..####',
       'd........#',
       '#........y',
-      '#........#',
+      'g........#',
       'W........#',
       '#........q',
       '#........#',
@@ -484,7 +493,7 @@ export const MAPS = {
       'e........#',
       '#........z',
       'W........#',
-      '#........#',
+      'h........#',
       '#........r',
       '#........#',
       '##########',
@@ -492,8 +501,10 @@ export const MAPS = {
     events: {
       w: stairs('본관', 'w', FLOORS.main, 2),
       x: r1Stairs(2),
-      y: stairs('제2연구동', 'y', FLOORS.r2, 2),
-      z: stairs('제3연구동', 'z', FLOORS.r3, 2),
+      y: r2Stairs(2),
+      g: r2Stairs2(2),
+      z: r3Stairs(2),
+      h: r3Stairs2(2),
       p: lockedRoom('제1연구동 2층 방'),
       q: lockedRoom('제2연구동 2층 방'),
       r: lockedRoom('제3연구동 2층 방'),
@@ -624,6 +635,128 @@ export const MAPS = {
     },
   },
 
+  // ── 제2·3연구동 3~6층 — 제1연구동처럼 긴 복도 양쪽으로 방. 계단1은 오른쪽 끝(y·z), 계단2는 왼쪽 끝(g·h). 방 위치·개수는 임시 ──
+  r2_3f: {
+    name: '제2연구동 3층',
+    rows: [
+      '####a####a####a####a####a#',
+      'g........................y',
+      '#........................#',
+      '####a####a####a####a####t#',
+    ],
+    events: {
+      y: r2Stairs(3),
+      g: r2Stairs2(3),
+      a: lockedRoom('제2연구동 3층 방'),
+      t: door('wcDoor', 'wc_r2_3f', 'o'), // 화장실
+    },
+  },
+  r2_4f: {
+    name: '제2연구동 4층',
+    rows: [
+      '####a####a####a####a####a#',
+      'g........................y',
+      '#........................#',
+      '####a####a####a####a####t#',
+    ],
+    events: {
+      y: r2Stairs(4),
+      g: r2Stairs2(4),
+      a: lockedRoom('제2연구동 4층 방'),
+      t: door('wcDoor', 'wc_r2_4f', 'o'), // 화장실
+    },
+  },
+  r2_5f: {
+    name: '제2연구동 5층',
+    rows: [
+      '####a####a####a####a####a#',
+      'g........................y',
+      '#........................#',
+      '####a####a####a####a####t#',
+    ],
+    events: {
+      y: r2Stairs(5),
+      g: r2Stairs2(5),
+      a: lockedRoom('제2연구동 5층 방'),
+      t: door('wcDoor', 'wc_r2_5f', 'o'), // 화장실
+    },
+  },
+  r2_6f: {
+    name: '제2연구동 6층',
+    rows: [
+      '####a####a####a####a####a#',
+      'g........................y',
+      '#........................#',
+      '####a####a####a####a####t#',
+    ],
+    events: {
+      y: r2Stairs(6),
+      g: r2Stairs2(6),
+      a: lockedRoom('제2연구동 6층 방'),
+      t: door('wcDoor', 'wc_r2_6f', 'o'), // 화장실
+    },
+  },
+  r3_3f: {
+    name: '제3연구동 3층',
+    rows: [
+      '####a####a####a####a####a#',
+      'h........................z',
+      '#........................#',
+      '####a####a####a####a####t#',
+    ],
+    events: {
+      z: r3Stairs(3),
+      h: r3Stairs2(3),
+      a: lockedRoom('제3연구동 3층 방'),
+      t: door('wcDoor', 'wc_r3_3f', 'o'), // 화장실
+    },
+  },
+  r3_4f: {
+    name: '제3연구동 4층',
+    rows: [
+      '####a####a####a####a####a#',
+      'h........................z',
+      '#........................#',
+      '####a####a####a####a####t#',
+    ],
+    events: {
+      z: r3Stairs(4),
+      h: r3Stairs2(4),
+      a: lockedRoom('제3연구동 4층 방'),
+      t: door('wcDoor', 'wc_r3_4f', 'o'), // 화장실
+    },
+  },
+  r3_5f: {
+    name: '제3연구동 5층',
+    rows: [
+      '####a####a####a####a####a#',
+      'h........................z',
+      '#........................#',
+      '####a####a####a####a####t#',
+    ],
+    events: {
+      z: r3Stairs(5),
+      h: r3Stairs2(5),
+      a: lockedRoom('제3연구동 5층 방'),
+      t: door('wcDoor', 'wc_r3_5f', 'o'), // 화장실
+    },
+  },
+  r3_6f: {
+    name: '제3연구동 6층',
+    rows: [
+      '####a####a####a####a####a#',
+      'h........................z',
+      '#........................#',
+      '####a####a####a####a####t#',
+    ],
+    events: {
+      z: r3Stairs(6),
+      h: r3Stairs2(6),
+      a: lockedRoom('제3연구동 6층 방'),
+      t: door('wcDoor', 'wc_r3_6f', 'o'), // 화장실
+    },
+  },
+
   // ── 극지지원동 (밖으로만 드나듦) ──
   polar_1f: {
     name: '극지지원동 1층',
@@ -749,7 +882,7 @@ export const MAPS = {
       f: lockedRoom('강의실'),
       j: door('labDoor', 'supA_mr2', 'o'), // 회의실 (남서쪽)
       w: door('wcDoor', 'wc_supA_2f', 'o'), // 화장실
-      n: door('door', 'supB_2f', 'n', 'right'), // 구름다리 → 남동동
+      n: door('door', 'supAB_bridge', 'a', 'right'), // 구름다리 → 남동동
     },
   },
   // 3층: 306호(캠벨) = 북동쪽 끝 오른쪽 방
@@ -845,6 +978,19 @@ export const MAPS = {
       o: entrance('door', 'campus', 'f', 'right'),
     },
   },
+  // 2층 구름다리: 북서동(왼쪽) ↔ 남동동(오른쪽). 양옆이 유리창. 길이는 임시(실제로는 두 동 사이 약 4m)
+  supAB_bridge: {
+    name: '구름다리 (연구지원동 2층)',
+    rows: [
+      '#WWWWWW#',
+      'a......b',
+      '#WWWWWW#',
+    ],
+    events: {
+      a: door('door', 'supA_2f', 'n', 'left'), // 북서동
+      b: door('door', 'supB_2f', 'n', 'right'), // 남동동
+    },
+  },
   supB_2f: {
     name: '연구지원동 남동동 2층',
     rows: [
@@ -856,7 +1002,7 @@ export const MAPS = {
     ],
     events: {
       s: stairs('연구지원동 남동동', 's', FLOORS.supB, 2),
-      n: door('door', 'supA_2f', 'n', 'left'), // 구름다리
+      n: door('door', 'supAB_bridge', 'b', 'left'), // 구름다리 → 북서동
     },
   },
   // 남동동 3층: 작가도 가 본 적이 없는 곳이라 배치 미정. 계단만 있다.
@@ -1045,6 +1191,110 @@ export const MAPS = {
     ],
     events: {
       o: door('wcDoor', 'r1_6f', 't'),
+    },
+  },
+  wc_r2_3f: {
+    name: '화장실 (제2연구동 3층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'r2_3f', 't'),
+    },
+  },
+  wc_r2_4f: {
+    name: '화장실 (제2연구동 4층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'r2_4f', 't'),
+    },
+  },
+  wc_r2_5f: {
+    name: '화장실 (제2연구동 5층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'r2_5f', 't'),
+    },
+  },
+  wc_r2_6f: {
+    name: '화장실 (제2연구동 6층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'r2_6f', 't'),
+    },
+  },
+  wc_r3_3f: {
+    name: '화장실 (제3연구동 3층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'r3_3f', 't'),
+    },
+  },
+  wc_r3_4f: {
+    name: '화장실 (제3연구동 4층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'r3_4f', 't'),
+    },
+  },
+  wc_r3_5f: {
+    name: '화장실 (제3연구동 5층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'r3_5f', 't'),
+    },
+  },
+  wc_r3_6f: {
+    name: '화장실 (제3연구동 6층)',
+    rows: [
+      '##########',
+      '#.#.#.#..#',
+      '#........#',
+      '#GG......#',
+      '####o#####',
+    ],
+    events: {
+      o: door('wcDoor', 'r3_6f', 't'),
     },
   },
   wc_supA_2f: {

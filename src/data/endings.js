@@ -5,8 +5,8 @@
 //                 마지막 줄은 늘 참이어야 한다(기본 엔딩).
 //  s(state)로 볼 수 있는 것: s.flags, s.items, s.quests, s.creatures(도감), s.affinity(호감도)
 //  편하게 쓰라고 아래 도우미를 둔다: creatureRate(s) 0~1, deliveredCount(s), questsDone(s), affinity(s, 'campbell')
-import { state } from '../state.js?v=0.20.0';
-import { CREATURES } from './creatures.js?v=0.20.0';
+import { state } from '../state.js?v=0.21.0';
+import { CREATURES } from './creatures.js?v=0.21.0';
 
 export const creatureRate = (s) => Object.keys(s.creatures).length / Math.max(1, Object.keys(CREATURES).length);
 export const deliveredCount = (s) => Object.values(s.creatures).filter((v) => v === 'delivered').length;
