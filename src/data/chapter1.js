@@ -62,7 +62,7 @@ export const CH1 = {
 
   // 연구지원동 2층 회의실의 번역기 (사이드 퀘스트 'translator')
   async findTranslator(c) {
-    if (c.has('translator')) return;
+    if (c.quest.finished('translator')) return;
     await c.say('(회의실에서 번역기를 찾음 — 대사 미정)');
     await c.give('translator');
     if (!c.quest.started('translator')) c.quest.start('translator');
@@ -75,7 +75,7 @@ export const CH1 = {
     await campbell(c, '(First meeting — Campbell\'s lines in English, TBD)', '(한국어 자막 — 미정)');
     await c.say('(수오 반응 — 대사 미정)', '수오');
     c.note.add('campbell'); // 노트 「대학원생 — Campbell」
-    if (!c.has('translator')) c.quest.start('translator'); // 영어라 알아듣기 어렵다 → 사이드 퀘스트 「번역기 찾기」
+    if (!c.quest.started('translator')) c.quest.start('translator'); // 영어라 알아듣기 어렵다 → 사이드 퀘스트 「번역기 찾기」
     if (c.quest.stage('ch1') === 0) c.quest.next('ch1');
   },
 

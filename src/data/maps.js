@@ -38,14 +38,14 @@
 //              (도착 칸 = 앵커 칸에서 그 방향으로 한 칸)
 // ─────────────────────────────────────────────
 
-import { PROLOGUE, PROLOGUE_START, STAFF } from './prologue.js?v=0.21.0';
-import { NPCS, EXAMPLE_ITEM } from './npcs.js?v=0.21.0';
-import { CH1 } from './chapter1.js?v=0.21.0';
-import { CREATURES } from './creatures.js?v=0.21.0';
-import { ITEMS } from './items.js?v=0.21.0';
-import { josa } from '../text.js?v=0.21.0';
-import { pickEnding } from './endings.js?v=0.21.0';
-import { helpTags } from '../state.js?v=0.21.0';
+import { PROLOGUE, PROLOGUE_START, STAFF } from './prologue.js?v=0.21.1';
+import { NPCS, EXAMPLE_ITEM } from './npcs.js?v=0.21.1';
+import { CH1 } from './chapter1.js?v=0.21.1';
+import { CREATURES } from './creatures.js?v=0.21.1';
+import { ITEMS } from './items.js?v=0.21.1';
+import { josa } from '../text.js?v=0.21.1';
+import { pickEnding } from './endings.js?v=0.21.1';
+import { helpTags } from '../state.js?v=0.21.1';
 
 export const START = PROLOGUE_START;
 

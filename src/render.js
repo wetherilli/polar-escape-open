@@ -1,5 +1,5 @@
-import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.21.0';
-import { ITEMS } from './data/items.js?v=0.21.0';
+import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.21.1';
+import { ITEMS } from './data/items.js?v=0.21.1';
 
 export const FONT = '18px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
 export const SMALL_FONT = '14px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
