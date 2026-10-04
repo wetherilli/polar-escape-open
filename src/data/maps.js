@@ -37,20 +37,22 @@
 //              (도착 칸 = 앵커 칸에서 그 방향으로 한 칸)
 // ─────────────────────────────────────────────
 
-import { PROLOGUE, PROLOGUE_START, STAFF } from './prologue.js?v=0.18.0';
-import { NPCS, EXAMPLE_ITEM } from './npcs.js?v=0.18.0';
-import { CH1 } from './chapter1.js?v=0.18.0';
-import { CREATURES } from './creatures.js?v=0.18.0';
-import { ITEMS } from './items.js?v=0.18.0';
-import { josa } from '../text.js?v=0.18.0';
-import { pickEnding } from './endings.js?v=0.18.0';
-import { helpTags } from '../state.js?v=0.18.0';
+import { PROLOGUE, PROLOGUE_START, STAFF } from './prologue.js?v=0.19.0';
+import { NPCS, EXAMPLE_ITEM } from './npcs.js?v=0.19.0';
+import { CH1 } from './chapter1.js?v=0.19.0';
+import { CREATURES } from './creatures.js?v=0.19.0';
+import { ITEMS } from './items.js?v=0.19.0';
+import { josa } from '../text.js?v=0.19.0';
+import { pickEnding } from './endings.js?v=0.19.0';
+import { helpTags } from '../state.js?v=0.19.0';
 
 export const START = PROLOGUE_START;
 
 // ── 자주 쓰는 이벤트 모양 ──
 // 아직 만들지 않은 방·층은 잠가 둔다(작가 지침 2026-10-04). 방을 만들면 그 문만 연결하면 된다.
 const lockedMsg = (label) => `[${label}]\n(잠겨 있다 — 문구 미정)`;
+// 잠긴 문·막힌 길: 덜컹 소리와 함께 문구
+const sayLocked = (c, text) => { c.sfx('locked'); return c.say(text); };
 // 헬퍼가 남기는 to·text·label·room 필드는 맵 편집기(tools/mapview.html)가 읽는다.
 // 문 방향(dir)을 빼면 도착 칸 옆의 빈 칸을 게임이 알아서 고른다(world.entryDir).
 const door = (sprite, map, anchor, dir) => ({
@@ -61,7 +63,7 @@ const look = (sprite, text) => ({
 });
 const lockedRoom = (label) => ({
   sprite: label.startsWith('화장실') ? 'wcDoor' : 'labDoor', // 화장실은 표지판 붙은 문
-  solid: true, trigger: 'touch', label, run: (c) => c.say(lockedMsg(label)),
+  solid: true, trigger: 'touch', label, run: (c) => sayLocked(c, lockedMsg(label)),
 });
 // 대학원생 등 NPC. color = 옷 색(임시 그림 구분용). 대사는 name 이름표로 나온다.
 const npc = (name, color, run) => ({
@@ -78,7 +80,7 @@ const PASS_MSG = '(방문증이 없어 출입문을 지날 수 없다 — 문구
 const entrance = (sprite, map, anchor, dir) => ({
   ...door(sprite, map, anchor, dir),
   entrance: true, // check.mjs가 캠퍼스 문이 전부 entrance인지 본다
-  run: (c) => (c.has('visitorPass') ? c.transfer(map, anchor, dir) : c.say(PASS_MSG)),
+  run: (c) => (c.has('visitorPass') ? c.transfer(map, anchor, dir) : sayLocked(c, PASS_MSG)),
 });
 // 연구지원동 북서동 출입문: 낮(오프닝)에는 북극곰 장면(pro 3) 뒤에 열린다
 const supADoor = (anchor, dir) => ({
@@ -127,10 +129,10 @@ const floorPicker = (kind, label, anchor, floors, here, dir = 'left', opts = {})
   const to = nums[pick];
   if (!to || to === here) return;
   if (opts.cut && (here <= opts.cut) !== (to <= opts.cut)) {
-    await c.say(CUT_MSG);
+    await sayLocked(c, CUT_MSG);
     return opts.onCut?.(c);
   }
-  if (!floors[to - 1]) return c.say(lockedMsg(`${label} ${to}층`));
+  if (!floors[to - 1]) return sayLocked(c, lockedMsg(`${label} ${to}층`));
   await c.transfer(floors[to - 1], anchor, dir);
 };
 const stairs = (label, anchor, floors, here, dir = 'left', opts = {}) => ({
@@ -147,12 +149,12 @@ const elevator = (label, anchor, floors, here, unlockFlag, dir = 'left') => ({
 // 대학원생의 도움으로 열리는 문 (helps.js effects.open에 tag가 있는 도움을 받으면 열린다). 그 전에는 잠겨 있다
 const helpDoor = (label, tag, map, anchor, dir) => ({
   sprite: 'labDoor', solid: true, trigger: 'touch', label, helpTag: tag, to: { map, anchor, dir },
-  run: (c) => (helpTags('open').includes(tag) ? c.transfer(map, anchor, dir) : c.say(lockedMsg(label))),
+  run: (c) => (helpTags('open').includes(tag) ? c.transfer(map, anchor, dir) : sayLocked(c, lockedMsg(label))),
 });
 // 호실 문 (번호판이 붙은 문). map이 없으면 잠겨 있다
 const roomDoor = (room, map, anchor, dir) => ({
   sprite: 'roomDoor', solid: true, trigger: 'touch', room, to: map ? { map, anchor, dir } : null,
-  run: map ? (c) => c.transfer(map, anchor, dir) : (c) => c.say(lockedMsg(room)),
+  run: map ? (c) => c.transfer(map, anchor, dir) : (c) => sayLocked(c, lockedMsg(room)),
 });
 
 // 동별 층 구성. 연구동 3~6층은 동마다 따로 만들 자리(지금은 null).

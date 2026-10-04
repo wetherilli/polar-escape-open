@@ -1,18 +1,19 @@
-import { TILE, DIRS, MOVE_SPEED, RUN_SPEED, STAMINA_DRAIN, STAMINA_REGEN, STAMINA_RECOVER } from './config.js?v=0.18.0';
-import { Chaser } from './chase.js?v=0.18.0';
-import { input } from './input.js?v=0.18.0';
-import { state, resetState, readSave, readAllSaves, hasAnySave, latestSlot, applySave, hasItem, curseEnv, helpMult } from './state.js?v=0.18.0';
-import { World } from './world.js?v=0.18.0';
-import { Player, Follower } from './player.js?v=0.18.0';
-import { Dialog } from './dialog.js?v=0.18.0';
-import { Menu } from './menu.js?v=0.18.0';
-import { QUESTS } from './data/quests.js?v=0.18.0';
-import { fader } from './fader.js?v=0.18.0';
-import { createRunner } from './events.js?v=0.18.0';
-import { START, MAPS } from './data/maps.js?v=0.18.0';
-import { ENDINGS } from './data/endings.js?v=0.18.0';
-import { PATCH, VERSION } from './data/patch.js?v=0.18.0';
-import { camera, drawWorld, drawLighting, drawHUD, drawTitle, drawEnding, drawPicture, drawToast, drawChaseBorder, drawGameOver, drawBubbles, drawSettings, GEAR_BUTTON, drawSlots, SLOT_BOX } from './render.js?v=0.18.0';
+import { TILE, DIRS, MOVE_SPEED, RUN_SPEED, STAMINA_DRAIN, STAMINA_REGEN, STAMINA_RECOVER } from './config.js?v=0.19.0';
+import { Chaser } from './chase.js?v=0.19.0';
+import { sfx, bgm, volume, setVolume } from './audio.js?v=0.19.0';
+import { input } from './input.js?v=0.19.0';
+import { state, resetState, readSave, readAllSaves, hasAnySave, latestSlot, applySave, hasItem, curseEnv, helpMult } from './state.js?v=0.19.0';
+import { World } from './world.js?v=0.19.0';
+import { Player, Follower } from './player.js?v=0.19.0';
+import { Dialog } from './dialog.js?v=0.19.0';
+import { Menu } from './menu.js?v=0.19.0';
+import { QUESTS } from './data/quests.js?v=0.19.0';
+import { fader } from './fader.js?v=0.19.0';
+import { createRunner } from './events.js?v=0.19.0';
+import { START, MAPS } from './data/maps.js?v=0.19.0';
+import { ENDINGS } from './data/endings.js?v=0.19.0';
+import { PATCH, VERSION } from './data/patch.js?v=0.19.0';
+import { camera, drawWorld, drawLighting, drawHUD, drawTitle, drawEnding, drawPicture, drawToast, drawChaseBorder, drawGameOver, drawBubbles, drawSettings, GEAR_BUTTON, drawSlots, SLOT_BOX } from './render.js?v=0.19.0';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -38,7 +39,7 @@ const game = {
   shake: null,     // { until, power } (c.shake)
   blackout: false, // 정전 (c.lights(false))
 
-  toast(text) { this.toasts.push({ text, t: 0 }); },
+  toast(text) { this.toasts.push({ text, t: 0 }); sfx('quest'); }, // 퀘스트·노트·도움·도감 알림
 
   follow(name, color) {
     this.follower = new Follower(this.player, name, color);
@@ -204,7 +205,7 @@ const hooks = {
     const ev = game.world.eventAt(x, y);
     if (ev && !ev.solid && ev.trigger === 'touch') runner.run(ev.run);
   },
-  onStep(x, y) { game.follower?.stepTo(x, y); },
+  onStep(x, y) { game.follower?.stepTo(x, y); stepSound(); },
 };
 
 function updatePlay(dt) {
@@ -221,7 +222,7 @@ function updatePlay(dt) {
   // 추격 중에는 메뉴를 열 수 없다(메뉴가 열린 동안 시간이 멈추므로)
   if (!p.moving && input.pressed('cancel') && !game.chase) return game.menu.show();
   if (!p.moving && input.pressed('items') && !game.chase) return game.menu.show(true);
-  if (input.pressed('light') && hasItem('flashlight')) state.flags.flashlightOn = !state.flags.flashlightOn; // 세이브에 남는다
+  if (input.pressed('light') && hasItem('flashlight')) { state.flags.flashlightOn = !state.flags.flashlightOn; sfx('light'); } // 세이브에 남는다
   p.update(dt, input.dir(), game.world, hooks, updateStamina(dt, p));
   if (!runner.busy && !p.moving && input.pressed('action')) {
     const f = p.front();
@@ -323,6 +324,7 @@ function updateChase(dt) {
   ch.chaser.update(dt * helpMult('chase'), game.world, game.player); // 도움(chase)이면 추격자가 느려진다
   if (!ch.chaser.touches(game.player)) return;
   ch.caught = true;
+  sfx('caught');
   runner.run(async (c) => {
     await c.shake(0.4, 8);
     await ch.opts.onCaught?.(c);
@@ -363,8 +365,39 @@ function updateCold(dt) {
   return true;
 }
 
+// ── 소리 ──
+// 지금 장면에 맞는 BGM: 맵에 bgm을 적으면 그것(null이면 무음), 아니면 추격·낮·밤
+function wantedBgm() {
+  if (game.scene === 'title' || game.scene === 'ending') return 'title';
+  if (game.scene !== 'play') return null;
+  if (game.chase) return 'chase';
+  if (game.world.def.bgm !== undefined) return game.world.def.bgm;
+  return state.flags.day ? 'day' : 'night';
+}
+// 메뉴·대화·슬롯·설정·타이틀에서 고르는 소리. 메뉴를 열고 닫는 소리
+let menuWasOpen = false;
+function uiSounds() {
+  const open = game.menu.open;
+  if (open !== menuWasOpen) sfx(open ? 'open' : 'close');
+  menuWasOpen = open;
+  const ui = game.slots || game.settings || game.scene !== 'play' || open || game.dialog.active;
+  if (!ui) return;
+  if (input.pressed('up') || input.pressed('down') || (game.settings && (input.pressed('left') || input.pressed('right')))) {
+    if (!game.dialog.active || game.dialog.choices) sfx('cursor');
+  }
+  if (input.pressed('action')) sfx('select');
+}
+// 발소리: 달리면 조금 더 자주 들리는 것처럼 매 걸음, 걷기는 한 걸음 건너
+let stepCount = 0;
+function stepSound() {
+  stepCount++;
+  if (input.down('run') || stepCount % 2 === 0) sfx('step');
+}
+
 function update(dt) {
   fader.update(dt);
+  uiSounds();
+  bgm(wantedBgm()); // 장면에 맞는 BGM (같으면 그대로)
   if (game.slots) return updateSlots(); // 저장·이어하기 슬롯 고르기가 열려 있으면 그것만
   if (fader.alpha > 0 && fader.alpha < 1) return; // 페이드 중엔 입력 무시
   if (game.scene === 'title') {
@@ -389,18 +422,37 @@ function update(dt) {
 }
 
 // ── 설정 화면 (타이틀 오른쪽 위 톱니바퀴) — 지금은 판 이력(data/patch.js)만 ──
+// 항목: BGM 음량 · 효과음 음량 (A/D로 10%씩) · 판 이력 (Enter로 펼침)
+const SETTINGS_ROWS = [
+  { id: 'bgm', label: 'BGM 음량' },
+  { id: 'sfx', label: '효과음 음량' },
+  { id: 'history', label: '판 이력' },
+];
 function openSettings() {
   const lines = PATCH.flatMap((p) => [
     { head: true, text: `v${p.ver}   ${p.date}` },
     ...p.notes.map((n) => ({ text: `· ${n}` })),
   ]);
-  game.settings = { lines, scroll: 0 };
+  game.settings = { sel: 0, view: 'main', lines, scroll: 0, volume };
 }
 function updateSettings() {
-  const s = game.settings, max = Math.max(0, s.lines.length - 14);
-  if (input.pressed('up')) s.scroll = Math.max(0, s.scroll - 3);
-  if (input.pressed('down')) s.scroll = Math.min(max, s.scroll + 3);
-  if (input.pressed('cancel') || input.pressed('action')) game.settings = null;
+  const s = game.settings;
+  if (s.view === 'history') { // 판 이력: W/S 넘기기, Esc·Enter 돌아가기
+    const max = Math.max(0, s.lines.length - 14);
+    if (input.pressed('up')) s.scroll = Math.max(0, s.scroll - 3);
+    if (input.pressed('down')) s.scroll = Math.min(max, s.scroll + 3);
+    if (input.pressed('cancel') || input.pressed('action')) s.view = 'main';
+    return;
+  }
+  const n = SETTINGS_ROWS.length, row = SETTINGS_ROWS[s.sel];
+  if (input.pressed('up')) s.sel = (s.sel + n - 1) % n;
+  if (input.pressed('down')) s.sel = (s.sel + 1) % n;
+  if (row.id === 'bgm' || row.id === 'sfx') {
+    const d = (input.pressed('right') ? 0.1 : 0) - (input.pressed('left') ? 0.1 : 0);
+    if (d) { setVolume(row.id, volume[row.id] + d); if (row.id === 'sfx') sfx('select'); }
+  }
+  if (input.pressed('action') && row.id === 'history') { s.view = 'history'; s.scroll = 0; }
+  else if (input.pressed('cancel')) game.settings = null;
 }
 
 // 슬롯 고르기: W/S로 고르고 Enter 결정, Esc 그만두기. 이어하기에서는 빈 슬롯을 건너뛴다
@@ -432,7 +484,7 @@ canvas.addEventListener('click', (e) => {
     return;
   }
   if (game.scene !== 'title') return;
-  if (game.settings) { game.settings = null; return; }
+  if (game.settings) { if (x < 40 || x > canvas.width - 40 || y < 30 || y > canvas.height - 30) game.settings = null; return; } // 창 밖을 누르면 닫기
   const b = GEAR_BUTTON;
   if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) { game.title.sel = -1; openSettings(); return; }
   const i = Math.floor((y - 286) / 34); // drawTitle의 메뉴 줄: 290 + i * 34

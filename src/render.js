@@ -1,5 +1,5 @@
-import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.18.0';
-import { ITEMS } from './data/items.js?v=0.18.0';
+import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.19.0';
+import { ITEMS } from './data/items.js?v=0.19.0';
 
 export const FONT = '18px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
 export const SMALL_FONT = '14px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
@@ -988,6 +988,8 @@ export function drawSlots(ctx, s) {
 }
 
 // 설정 화면 — 지금은 판 이력만. lines = 미리 펼친 줄 목록, scroll = 첫 줄 번호
+// settings = { sel, view: 'main' | 'history', lines, scroll, volume }
+const SETTINGS_LABELS = ['BGM 음량', '효과음 음량', '판 이력'];
 export function drawSettings(ctx, settings) {
   rect(ctx, 'rgba(2, 4, 10, 0.92)', 0, 0, SCREEN_W, SCREEN_H);
   panel(ctx, 40, 30, SCREEN_W - 80, SCREEN_H - 60);
@@ -995,6 +997,33 @@ export function drawSettings(ctx, settings) {
   ctx.font = FONT;
   ctx.fillStyle = '#ffd98a';
   ctx.fillText('설정', 60, 46);
+  if (settings.view === 'main') {
+    // 음량 두 줄(막대 + ◀ ▶) + 판 이력
+    SETTINGS_LABELS.forEach((label, i) => {
+      const y = 100 + i * 52, on = i === settings.sel;
+      if (on) { ctx.fillStyle = 'rgba(255, 217, 138, 0.12)'; ctx.fillRect(52, y - 10, SCREEN_W - 104, 42); }
+      ctx.font = FONT;
+      ctx.fillStyle = on ? '#ffd98a' : '#c9d6ea';
+      ctx.fillText(`${on ? '▶ ' : '   '}${label}`, 62, y);
+      if (i < 2) {
+        const v = settings.volume[i === 0 ? 'bgm' : 'sfx'];
+        rect(ctx, '#1a2233', 260, y + 4, 200, 14);
+        rect(ctx, on ? '#ffd98a' : '#7d8aa0', 260, y + 4, Math.round(200 * v), 14);
+        ctx.font = SMALL_FONT;
+        ctx.fillStyle = '#c9d6ea';
+        ctx.fillText(`${Math.round(v * 100)}%`, 474, y + 2);
+        if (on) { ctx.fillStyle = '#ffd98a'; ctx.fillText('◀', 240, y + 2); ctx.fillText('▶', 520, y + 2); }
+      } else {
+        ctx.font = SMALL_FONT;
+        ctx.fillStyle = '#7d8aa0';
+        ctx.fillText('Enter — 보기', 260, y + 3);
+      }
+    });
+    ctx.font = SMALL_FONT;
+    ctx.fillStyle = '#56657a';
+    ctx.fillText('W/S 고르기 · A/D 음량 · Enter 결정 · Esc 닫기', 60, SCREEN_H - 58);
+    return;
+  }
   ctx.font = SMALL_FONT;
   ctx.fillStyle = '#6f86a8';
   ctx.fillText('판 이력', 60, 80);
@@ -1008,7 +1037,7 @@ export function drawSettings(ctx, settings) {
   ctx.font = SMALL_FONT;
   ctx.fillStyle = '#56657a';
   const more = settings.lines.length > rows ? 'W/S 넘기기 · ' : '';
-  ctx.fillText(`${more}Esc·Enter 닫기`, 60, SCREEN_H - 58);
+  ctx.fillText(`${more}Esc·Enter 돌아가기`, 60, SCREEN_H - 58);
 }
 
 export function drawEnding(ctx, ending, t) {

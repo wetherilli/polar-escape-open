@@ -1,14 +1,15 @@
-import { state, hasItem, saveGame, readSave, curseLevel } from './state.js?v=0.18.0';
-import { CURSE } from './data/curse.js?v=0.18.0';
-import { NOTES } from './data/notes.js?v=0.18.0';
-import { HELPS } from './data/helps.js?v=0.18.0';
-import { MAPS } from './data/maps.js?v=0.18.0';
-import { ITEMS } from './data/items.js?v=0.18.0';
-import { QUESTS } from './data/quests.js?v=0.18.0';
-import { CREATURES } from './data/creatures.js?v=0.18.0';
-import { fader } from './fader.js?v=0.18.0';
+import { state, hasItem, saveGame, readSave, curseLevel } from './state.js?v=0.19.0';
+import { CURSE } from './data/curse.js?v=0.19.0';
+import { NOTES } from './data/notes.js?v=0.19.0';
+import { HELPS } from './data/helps.js?v=0.19.0';
+import { MAPS } from './data/maps.js?v=0.19.0';
+import { ITEMS } from './data/items.js?v=0.19.0';
+import { QUESTS } from './data/quests.js?v=0.19.0';
+import { CREATURES } from './data/creatures.js?v=0.19.0';
+import { fader } from './fader.js?v=0.19.0';
+import { sfx } from './audio.js?v=0.19.0';
 
-import { josa } from './text.js?v=0.18.0';
+import { josa } from './text.js?v=0.19.0';
 
 const subtitle = (opts) => (opts.sub && hasItem('translator') ? opts.sub : null);
 
@@ -19,6 +20,7 @@ export function createRunner(game) {
   const c = {
     // opts.sub = 한국어 자막. 번역기(translator)를 가지고 있을 때만 보인다.
     // 번역기는 자막만 켜 준다 — 진행 조건으로 쓰지 않는다(영어를 읽는 플레이어는 없이도 끝까지 간다).
+    sfx: (name) => sfx(name), // 효과음 한 번 (audio.js의 SFX 이름)
     say: (text, speaker, opts = {}) => game.dialog.open(text, { speaker, sub: subtitle(opts) }),
     choose: (text, choices, opts = {}) => game.dialog.open(text, { choices, speaker: opts.speaker, sub: subtitle(opts) }),
 
@@ -27,6 +29,7 @@ export function createRunner(game) {
       for (let i = 0; i < count; i++) state.items.push(id);
       const name = ITEMS[id].name;
       const label = count > 1 ? `${name} ${count}개를` : `${name}${josa(name, '을', '를')}`;
+      sfx('item');
       await c.say(`${label} 손에 넣었다.`);
     },
     count: (id) => state.items.filter((i) => i === id).length,
@@ -162,6 +165,7 @@ export function createRunner(game) {
     // 화면 번쩍임: color(기본 흰색)로 덮였다가 seconds초 동안 사라진다
     async flash(color = '#ffffff', seconds = 0.4) {
       game.flash = { color, until: game.time + seconds, dur: seconds };
+      sfx('flash');
       await c.wait(seconds * 1000);
     },
     face(dir) { game.player.dir = dir; },                // 플레이어가 dir 쪽을 보게 함
@@ -189,7 +193,8 @@ export function createRunner(game) {
     // anchor 이벤트 칸에서 dir 방향으로 한 칸 옆에 도착
     async transfer(mapId, anchor, dir) {
       // 공개 배포본에서는 internal 맵을 뺀다(tools/배포하기.sh). 그리로 가는 문은 잠긴 문처럼 둔다
-      if (!MAPS[mapId]) return c.say('(잠겨 있다)');
+      if (!MAPS[mapId]) { sfx('locked'); return c.say('(잠겨 있다)'); }
+      sfx('door');
       await fader.to(1);
       const escaped = game.chase && !game.chase.maps.includes(mapId) ? game.chase : null;
       game.enterMap(mapId, anchor, dir); // 추격 구역 밖이면 여기서 추격이 끝난다
@@ -212,6 +217,7 @@ export function createRunner(game) {
         .sort((a, b) => b[1].order - a[1].order)[0];
       const quest = main ? `${QUESTS[main[0]].name} — ${QUESTS[main[0]].steps[main[1].stage]}` : (state.flags.objective ?? '');
       const ok = saveGame(slot, { map: game.world.id, x: p.x, y: p.y, dir: p.dir }, { quest, place: game.world.def.name });
+      if (ok) sfx('save');
       await c.say(ok ? '저장했습니다.' : '저장하지 못했습니다.\n(브라우저 저장소가 막혀 있습니다)');
     },
 
