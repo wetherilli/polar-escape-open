@@ -1,5 +1,5 @@
-import { SCREEN_W, SCREEN_H, TEXT_SPEED } from './config.js?v=0.17.0';
-import { panel, FONT, SMALL_FONT } from './render.js?v=0.17.0';
+import { SCREEN_W, SCREEN_H, TEXT_SPEED } from './config.js?v=0.18.0';
+import { panel, FONT, SMALL_FONT } from './render.js?v=0.18.0';
 
 const BOX_DEFAULT = { x: 16, y: SCREEN_H - 132, w: SCREEN_W - 32, h: 116, pad: 18, lineH: 26 };
 const LINES_PER_PAGE = 3;

@@ -1,12 +1,12 @@
-import { SCREEN_W, SCREEN_H } from './config.js?v=0.17.0';
-import { panel, FONT, SMALL_FONT, drawItemIcon, ICON_SLOT, iconSlot, drawBadge } from './render.js?v=0.17.0';
-import { wrap } from './dialog.js?v=0.17.0';
-import { state, unreadNotes } from './state.js?v=0.17.0';
-import { ITEMS } from './data/items.js?v=0.17.0';
-import { QUESTS } from './data/quests.js?v=0.17.0';
-import { CREATURES } from './data/creatures.js?v=0.17.0';
-import { NOTES } from './data/notes.js?v=0.17.0';
-import { HELPS } from './data/helps.js?v=0.17.0';
+import { SCREEN_W, SCREEN_H } from './config.js?v=0.18.0';
+import { panel, FONT, SMALL_FONT, drawItemIcon, ICON_SLOT, iconSlot, drawBadge } from './render.js?v=0.18.0';
+import { wrap } from './dialog.js?v=0.18.0';
+import { state, unreadNotes } from './state.js?v=0.18.0';
+import { ITEMS } from './data/items.js?v=0.18.0';
+import { QUESTS } from './data/quests.js?v=0.18.0';
+import { CREATURES } from './data/creatures.js?v=0.18.0';
+import { NOTES } from './data/notes.js?v=0.18.0';
+import { HELPS } from './data/helps.js?v=0.18.0';
 
 // 메뉴 (Esc · 소지품은 E). 왼쪽 탭에서 고르고, Enter로 목록에 들어가 항목을 고르면 아래에 설명이 나온다.
 const TABS = [

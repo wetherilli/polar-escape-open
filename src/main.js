@@ -1,18 +1,18 @@
-import { TILE, DIRS, MOVE_SPEED, RUN_SPEED, STAMINA_DRAIN, STAMINA_REGEN, STAMINA_RECOVER } from './config.js?v=0.17.0';
-import { Chaser } from './chase.js?v=0.17.0';
-import { input } from './input.js?v=0.17.0';
-import { state, resetState, readSave, readAllSaves, hasAnySave, latestSlot, applySave, hasItem, curseEnv, helpMult } from './state.js?v=0.17.0';
-import { World } from './world.js?v=0.17.0';
-import { Player, Follower } from './player.js?v=0.17.0';
-import { Dialog } from './dialog.js?v=0.17.0';
-import { Menu } from './menu.js?v=0.17.0';
-import { QUESTS } from './data/quests.js?v=0.17.0';
-import { fader } from './fader.js?v=0.17.0';
-import { createRunner } from './events.js?v=0.17.0';
-import { START, MAPS } from './data/maps.js?v=0.17.0';
-import { ENDINGS } from './data/endings.js?v=0.17.0';
-import { PATCH, VERSION } from './data/patch.js?v=0.17.0';
-import { camera, drawWorld, drawLighting, drawHUD, drawTitle, drawEnding, drawPicture, drawToast, drawChaseBorder, drawGameOver, drawBubbles, drawSettings, GEAR_BUTTON, drawSlots, SLOT_BOX } from './render.js?v=0.17.0';
+import { TILE, DIRS, MOVE_SPEED, RUN_SPEED, STAMINA_DRAIN, STAMINA_REGEN, STAMINA_RECOVER } from './config.js?v=0.18.0';
+import { Chaser } from './chase.js?v=0.18.0';
+import { input } from './input.js?v=0.18.0';
+import { state, resetState, readSave, readAllSaves, hasAnySave, latestSlot, applySave, hasItem, curseEnv, helpMult } from './state.js?v=0.18.0';
+import { World } from './world.js?v=0.18.0';
+import { Player, Follower } from './player.js?v=0.18.0';
+import { Dialog } from './dialog.js?v=0.18.0';
+import { Menu } from './menu.js?v=0.18.0';
+import { QUESTS } from './data/quests.js?v=0.18.0';
+import { fader } from './fader.js?v=0.18.0';
+import { createRunner } from './events.js?v=0.18.0';
+import { START, MAPS } from './data/maps.js?v=0.18.0';
+import { ENDINGS } from './data/endings.js?v=0.18.0';
+import { PATCH, VERSION } from './data/patch.js?v=0.18.0';
+import { camera, drawWorld, drawLighting, drawHUD, drawTitle, drawEnding, drawPicture, drawToast, drawChaseBorder, drawGameOver, drawBubbles, drawSettings, GEAR_BUTTON, drawSlots, SLOT_BOX } from './render.js?v=0.18.0';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -47,6 +47,7 @@ const game = {
 
   enterMap(mapId, anchor, dir) {
     this.clearBubbles();
+    this.stopEventMoves();
     this.world.load(mapId);
     const a = this.world.anchor(anchor);
     dir = dir ?? this.world.entryDir(a);
@@ -75,6 +76,20 @@ const game = {
     this.bubbles = this.bubbles.filter((b) => b.who !== target || (b.resolve?.(), false)); // 같은 사람의 이전 말풍선은 바꿈
     return new Promise((resolve) => this.bubbles.push({ who: target, text, until: this.time + secs, resolve }));
   },
+
+  // ── NPC 이동 (c.move) ── 이벤트 하나를 dir 쪽으로 steps칸. 막히면 거기서 멈춤
+  //  맵을 다시 들어오면 원래 자리로 돌아간다(이벤트 위치는 맵을 불러올 때마다 새로 정해짐)
+  eventMoves: [],
+  stopEventMoves() { this.eventMoves.forEach((m) => m.resolve()); this.eventMoves = []; },
+  moveEvent(id, dir, steps) {
+    const ev = this.world.events.find((e) => e.id === id);
+    if (!ev || steps <= 0) return Promise.resolve();
+    ev.dir = dir;
+    return new Promise((resolve) => this.eventMoves.push({ ev, dir, left: steps, t: 1, resolve }));
+  },
+
+  // ── 화면 번쩍임 (c.flash) ──
+  flash: null, // { color, until, dur }
 
   // ── 이벤트 중 걷기 (c.walk) ── 걷기가 끝나거나 막히면 resolve
   autoMove: null,
@@ -146,6 +161,8 @@ const game = {
     this.chase = null;
     this.autoMove = null;
     this.clearBubbles();
+    this.stopEventMoves();
+    this.flash = null;
     this.follower = null;
     this.picture = null;
     this.shake = null;
@@ -193,6 +210,7 @@ const hooks = {
 function updatePlay(dt) {
   if (game.toasts.length && (game.toasts[0].t += dt) > TOAST_TIME) game.toasts.shift();
   updateBubbles();
+  if (game.eventMoves.length) updateEventMoves(dt);
   if (game.dialog.active) return game.dialog.update(dt, input);
   if (game.menu.open) return game.menu.update(input);
   if (game.autoMove) return updateAutoMove(dt);
@@ -238,6 +256,31 @@ function updateBubbles() {
     game.bubble(ch.lines[ev.chatterIdx], ev.id);
     ev.chatterAt = game.time + every * (0.8 + Math.random() * 0.4);
   }
+}
+
+// NPC 이동: 한 칸씩 MOVE_SPEED로. 그리는 위치는 ev.px/py (render.js가 읽는다)
+const NPC_SPEED = 4;
+function updateEventMoves(dt) {
+  game.eventMoves = game.eventMoves.filter((m) => {
+    const ev = m.ev;
+    if (m.t < 1) {
+      m.t = Math.min(1, m.t + dt * NPC_SPEED);
+      ev.px = ev.fx + (ev.x - ev.fx) * m.t;
+      ev.py = ev.fy + (ev.y - ev.fy) * m.t;
+      if (m.t < 1) return true;
+    }
+    const d = DIRS[m.dir], nx = ev.x + d.x, ny = ev.y + d.y;
+    const blocked = game.world.isBlocked(nx, ny) || (game.player.x === nx && game.player.y === ny);
+    if (m.left <= 0 || blocked) {
+      delete ev.px; delete ev.py;
+      m.resolve();
+      return false;
+    }
+    ev.fx = ev.x; ev.fy = ev.y; ev.x = nx; ev.y = ny;
+    ev.px = ev.fx; ev.py = ev.fy;
+    m.left--; m.t = 0;
+    return true;
+  });
 }
 
 // 이벤트가 시킨 걷기: 문·이벤트를 건드리지 않고 정해진 칸 수만큼 걷는다
@@ -454,6 +497,12 @@ function draw() {
     const tint = !state.flags.day && !game.blackout && curseEnv().tint; // 저주 단계·새벽의 화면 색조
     if (tint) { ctx.fillStyle = tint; ctx.fillRect(0, 0, canvas.width, canvas.height); }
     if (!game.picture) drawBubbles(ctx, game.bubbles, cam, t);
+    if (game.flash && t < game.flash.until) { // c.flash: 정한 색으로 번쩍였다가 사라진다
+      ctx.globalAlpha = (game.flash.until - t) / game.flash.dur;
+      ctx.fillStyle = game.flash.color;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.globalAlpha = 1;
+    }
     if (game.chase) drawChaseBorder(ctx, t);
     ctx.restore();
     if (game.picture) drawPicture(ctx, game.picture, t);

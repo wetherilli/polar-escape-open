@@ -1,5 +1,5 @@
-import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.17.0';
-import { ITEMS } from './data/items.js?v=0.17.0';
+import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.18.0';
+import { ITEMS } from './data/items.js?v=0.18.0';
 
 export const FONT = '18px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
 export const SMALL_FONT = '14px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
@@ -107,6 +107,45 @@ const PIXEL_TILES = {
       rect(g, [pick(['#f3f0e2', '#f2d65c'], r(3, 0, 7)), '#3d4a40'][n], fx, fy, 2, 2);
     }
   },
+  // 나무: 잔디 위에 줄기 + 둥근 잎 덩어리(밝은 쪽·어두운 쪽)
+  tree(g, n, r) {
+    PIXEL_TILES.grass(g, n, r);
+    g.fillStyle = 'rgba(0,0,0,0.3)';
+    g.beginPath(); g.ellipse(17, 28, 11, 3, 0, 0, Math.PI * 2); g.fill();
+    rect(g, ['#6b4a2e', '#2e2219'][n], 14, 18, 5, 11);
+    const leaf = [['#3f7d36', '#4f9442', '#2f6429'], ['#16251a', '#1d3022', '#101b13']][n];
+    g.fillStyle = leaf[2]; g.beginPath(); g.arc(16, 13, 12, 0, Math.PI * 2); g.fill();
+    g.fillStyle = leaf[0]; g.beginPath(); g.arc(15, 12, 10, 0, Math.PI * 2); g.fill();
+    g.fillStyle = leaf[1]; g.beginPath(); g.arc(12, 9, 5, 0, Math.PI * 2); g.fill();
+    for (let k = 0; k < 14; k++) rect(g, pick(leaf, r(k, 0, 1)), 6 + Math.floor(r(k, 1, 2) * 20), 3 + Math.floor(r(k, 2, 3) * 18), 1, 1);
+  },
+  // 화단: 돌 테두리 + 흙 + 꽃
+  flowerbed(g, n, r) {
+    rect(g, ['#a39c8e', '#3a3833'][n], 0, 0, 32, 32);
+    rect(g, ['#6b4f36', '#251c15'][n], 3, 3, 26, 26);
+    const leaves = ['#4f8a41', '#1d2f22'][n];
+    const petals = [['#f2d65c', '#ef8fa8', '#f4f0e2', '#e8584a'], ['#4d4a30', '#4a3540', '#45443e', '#4a2c2a']][n];
+    for (let k = 0; k < 9; k++) {
+      const x = 5 + Math.floor(r(k, 0, 1) * 20), y = 5 + Math.floor(r(k, 1, 2) * 20);
+      rect(g, leaves, x, y + 2, 2, 3);
+      rect(g, pick(petals, r(k, 2, 3)), x - 1, y, 3, 2);
+    }
+  },
+  // 주차장: 아스팔트 + 칸 왼쪽의 흰 주차선
+  parking(g, n, r) {
+    PIXEL_TILES.road(g, n, r);
+    rect(g, ['#e8e8e2', '#5d5f5a'][n], 0, 2, 2, 28);
+  },
+  // 벽: 위쪽 마감(밝은 띠) + 그 아래 그늘, 16px마다 패널 이음매, 잔 얼룩
+  wall(g, n, r) {
+    rect(g, ['#8f99a8', '#1f2430'][n], 0, 0, 32, 32);
+    rect(g, ['#b4bcc8', '#2e3546'][n], 0, 0, 32, 6);
+    rect(g, ['#c9d0da', '#384052'][n], 0, 0, 32, 1);
+    rect(g, ['#76808f', '#191d26'][n], 0, 6, 32, 1);
+    for (const sx of [0, 16]) rect(g, ['#818b9a', '#1b1f29'][n], sx, 7, 1, 25);
+    for (let k = 0; k < 24; k++) rect(g, pick([['#8a94a3', '#96a0ae'], ['#1c2029', '#242a37']][n], r(k, 0, 1)), Math.floor(r(k, 1, 2) * 32), 8 + Math.floor(r(k, 2, 3) * 23), 1, 1);
+    rect(g, ['#7a8392', '#181b23'][n], 0, 31, 32, 1);
+  },
   // 창고 바닥: 에폭시 칠한 콘크리트 — 얼룩, 긁힌 자국, 가장자리 줄눈
   storage(g, n, r) {
     rect(g, ['#9aa39a', '#343a37'][n], 0, 0, 32, 32);
@@ -126,10 +165,43 @@ const PIXEL_TILES = {
 };
 
 const floor = drawPixelTile('floor');
-const wall = (ctx, x, y, o = {}) => {
-  rect(ctx, day(o) ? '#8f99a8' : '#1f2430', x, y, T, T);
-  rect(ctx, day(o) ? '#aab3c0' : '#2c3342', x, y, T, 6);
-};
+const wallTile = drawPixelTile('wall');
+const wall = (ctx, x, y, o = {}) => wallTile(ctx, x, y, { tx: o.tx ?? 0, ty: o.ty ?? 0, state: o.state });
+
+// 창문 칸: 바깥 풍경(낮 하늘 / 새벽 / 밤 야경) + 창틀과 가운데 창살
+function windowPane(ctx, x, y, o) {
+  if (day(o)) { // 낮: 하늘과 구름
+    wall(ctx, x, y, o);
+    rect(ctx, '#8cc4ec', x + 4, y + 7, T - 8, T - 13);
+    rect(ctx, '#f4f8fc', x + 6 + ((o.tx * 5 + Math.floor(o.t * 2)) % 12), y + 10, 8, 3);
+    return;
+  }
+  if (o.state?.flags.curseLifted) { // 저주가 풀린 뒤: 극야가 끝나 새벽 하늘
+    wall(ctx, x, y);
+    rect(ctx, '#3b4f7a', x + 4, y + 7, T - 8, 6);
+    rect(ctx, '#c78a8a', x + 4, y + 13, T - 8, 4);
+    rect(ctx, '#f2b77a', x + 4, y + 17, T - 8, T - 23);
+    rect(ctx, '#1d2638', x + 4, y + T - 8, T - 8, 2);
+    return;
+  }
+  // 밤: 창밖 송도 야경. 건물 불빛이 천천히 깜빡인다
+  wall(ctx, x, y);
+  rect(ctx, '#0a1426', x + 4, y + 7, T - 8, T - 13);
+  rect(ctx, '#111d33', x + 4, y + T - 12, T - 8, 6);
+  for (let i = 0; i < 4; i++) {
+    const h = (o.tx * 7 + i * 13) % 17;
+    const on = Math.sin(o.t * 0.7 + o.tx * 3 + i * 2) > -0.6;
+    rect(ctx, on ? '#f2c96b' : '#3a3420', x + 6 + ((h * 3 + i * 5) % (T - 14)), y + 10 + (h % 9), 2, 2);
+  }
+}
+function windowFrame(ctx, x, y, isDay) {
+  const c = isDay ? '#6f7987' : '#3a4252';
+  rect(ctx, c, x + 3, y + 6, T - 6, 1);
+  rect(ctx, c, x + 3, y + T - 6, T - 6, 1);
+  rect(ctx, c, x + 3, y + 6, 1, T - 11);
+  rect(ctx, c, x + T - 4, y + 6, 1, T - 11);
+  rect(ctx, c, x + 15, y + 7, 2, T - 13);
+}
 
 const TILES = {
   '.': floor,
@@ -139,6 +211,9 @@ const TILES = {
   ':': drawPixelTile('sidewalk'), // 보도
   _: drawPixelTile('road'),       // 차도
   ';': drawPixelTile('grass'),    // 잔디
+  T: drawPixelTile('tree'),       // 나무 (통과 불가)
+  '*': drawPixelTile('flowerbed'), // 화단 (통과 불가)
+  '|': drawPixelTile('parking'),  // 주차장 (주차선)
   H(ctx, x, y, o) { // 건물 외벽 — 낮: 밝은 외장 + 하늘이 비친 유리 / 밤: 창 몇 개만 불이 켜져 있다
     if (day(o)) {
       rect(ctx, '#dfe3e8', x, y, T, T);
@@ -160,31 +235,7 @@ const TILES = {
     rect(ctx, d ? '#8d96a3' : '#55606e', x + 4, y + 6, 3, 20);
     rect(ctx, d ? '#8d96a3' : '#55606e', x + 24, y + 6, 3, 20);
   },
-  W(ctx, x, y, o) {
-    if (day(o)) { // 낮: 하늘과 구름
-      wall(ctx, x, y, o);
-      rect(ctx, '#8cc4ec', x + 4, y + 7, T - 8, T - 13);
-      rect(ctx, '#f4f8fc', x + 6 + ((o.tx * 5 + Math.floor(o.t * 2)) % 12), y + 10, 8, 3);
-      return;
-    }
-    if (o.state?.flags.curseLifted) { // 저주가 풀린 뒤: 극야가 끝나 새벽 하늘
-      wall(ctx, x, y);
-      rect(ctx, '#3b4f7a', x + 4, y + 7, T - 8, 6);
-      rect(ctx, '#c78a8a', x + 4, y + 13, T - 8, 4);
-      rect(ctx, '#f2b77a', x + 4, y + 17, T - 8, T - 23);
-      rect(ctx, '#1d2638', x + 4, y + T - 8, T - 8, 2);
-      return;
-    }
-    // 밤: 창밖 송도 야경. 건물 불빛이 천천히 깜빡인다
-    wall(ctx, x, y);
-    rect(ctx, '#0a1426', x + 4, y + 7, T - 8, T - 13);
-    rect(ctx, '#111d33', x + 4, y + T - 12, T - 8, 6);
-    for (let i = 0; i < 4; i++) {
-      const h = (o.tx * 7 + i * 13) % 17;
-      const on = Math.sin(o.t * 0.7 + o.tx * 3 + i * 2) > -0.6;
-      rect(ctx, on ? '#f2c96b' : '#3a3420', x + 6 + ((h * 3 + i * 5) % (T - 14)), y + 10 + (h % 9), 2, 2);
-    }
-  },
+  W(ctx, x, y, o) { windowPane(ctx, x, y, o); windowFrame(ctx, x, y, day(o)); },
   V(ctx, x, y, o) { // 아래층이 내다보이는 트인 공간: 어두운 아래층 바닥 + 복도 쪽 난간
     rect(ctx, day(o) ? '#7d848f' : '#141820', x, y, T, T);
     rect(ctx, day(o) ? '#8b929d' : '#1a1f29', x + (o.ty % 2 ? 4 : 18), y + 6, 10, 10);
@@ -349,7 +400,8 @@ const SPRITES = {
   // ── 사람·세이브 ──
   // NPC: 이벤트에 color(옷 색)를 준다. 말을 걸면 ev.dir이 플레이어 쪽으로 바뀐다.
   npc(ctx, x, y, o) {
-    drawPerson(ctx, x, y, o.ev.dir ?? 'down', o.ev.color ?? '#7a8a9a', '#2a2420');
+    const walking = o.ev.px !== undefined; // c.move로 걷는 중이면 걷는 장면
+    drawPerson(ctx, x, y, o.ev.dir ?? 'down', o.ev.color ?? '#7a8a9a', '#2a2420', 0, walking ? 1 + ((o.ev.x + o.ev.y) & 1) : 0);
   },
   // 세이브 포인트: 켜진 노트북 + 스탠드 불빛
   savePoint(ctx, x, y, o) {
@@ -441,12 +493,12 @@ export function drawWorld(ctx, world, player, state, cam, t, follower = null, ch
     }
   }
   for (const ev of world.visibleEvents()) {
-    SPRITES[ev.sprite]?.(ctx, ev.x * T - cam.x, ev.y * T - cam.y, { t, state, ev });
+    SPRITES[ev.sprite]?.(ctx, Math.round((ev.px ?? ev.x) * T - cam.x), Math.round((ev.py ?? ev.y) * T - cam.y), { t, state, ev }); // px·py = c.move로 걷는 중
   }
   if (follower) {
     const fx = Math.round(follower.px * T - cam.x), fy = Math.round(follower.py * T - cam.y);
     const bob = follower.moving ? -Math.round(Math.sin(player.t * Math.PI) * 2) : 0;
-    drawPerson(ctx, fx, fy, follower.dir, follower.color, '#2a2420', bob);
+    drawPerson(ctx, fx, fy, follower.dir, follower.color, '#2a2420', bob, walkFrame(follower.moving, player.t, follower.x, follower.y));
   }
   drawPlayer(ctx, player, cam);
   if (chaser) {
@@ -457,22 +509,67 @@ export function drawWorld(ctx, world, player, state, cam, t, follower = null, ch
 }
 
 // 사람 공용 임시 그림: 몸통 색(body)과 머리 색(head)만 다르게
-function drawPerson(ctx, x, y, dir, body, head, bob = 0) {
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  ctx.beginPath(); ctx.ellipse(x + 16, y + 28, 9, 3, 0, 0, Math.PI * 2); ctx.fill();
-  rect(ctx, body, x + 8, y + 13 + bob, 16, 14);
-  ctx.fillStyle = head;
-  ctx.beginPath(); ctx.arc(x + 16, y + 11 + bob, 7, 0, Math.PI * 2); ctx.fill();
-  if (dir !== 'up') {
-    const fx = { down: 0, left: -3, right: 3 }[dir];
-    rect(ctx, '#f1c9a0', x + 12 + fx, y + 9 + bob, 8, 5);
-  }
+// ── 사람 픽셀 그림 (16×16을 2배로) ──
+// 글자: h 머리카락 · s 피부 · e 눈 · w 셔츠 깃 · b 옷 · d 옷 그늘(팔) · p 바지 · k 신발
+// 몸(0~12줄)은 방향마다, 다리(13~15줄)는 걷는 장면마다. 오른쪽은 왼쪽을 뒤집어 쓴다.
+const PERSON_BODY = {
+  down: ['......hhhh......', '....hhhhhhhh....', '...hhhhhhhhhh...', '...hhhhhhhhhh...', '...hssssssssh...',
+    '...ssessssess...', '....ssssssss....', '.....bwwwwb.....', '....bbbwwbbb....', '...dbbbbbbbbd...',
+    '...dbbbbbbbbd...', '...sbbbbbbbbs...', '....pppppppp....'],
+  up: ['......hhhh......', '....hhhhhhhh....', '...hhhhhhhhhh...', '...hhhhhhhhhh...', '...hhhhhhhhhh...',
+    '...hhhhhhhhhh...', '....hhhhhhhh....', '.....bbbbbb.....', '....bbbbbbbb....', '...dbbbbbbbbd...',
+    '...dbbbbbbbbd...', '...sbbbbbbbbs...', '....pppppppp....'],
+  left: ['.....hhhhh......', '....hhhhhhh.....', '...hhhhhhhhh....', '...hhhhhhhhh....', '...sshhhhhhh....',
+    '..ssehhhhhhh....', '...sssshhhh.....', '.....wbbb.......', '....bbbbbb......', '....bbbdbb......',
+    '....bbbdbb......', '....bbbsbb......', '....pppppp......'],
+};
+const PERSON_LEGS = {
+  front: [ // 앞·뒤: 서 있기, 왼발, 오른발
+    ['....ppp..ppp....', '....ppp..ppp....', '....kkk..kkk....'],
+    ['....ppp..ppp....', '....ppp...kk....', '....kkk.........'],
+    ['....ppp..ppp....', '....kk...ppp....', '.........kkk....'],
+  ],
+  side: [ // 옆: 서 있기, 벌린 걸음
+    ['.....pppp.......', '.....pppp.......', '....kkkk........'],
+    ['....pp..pp......', '...pp....pp.....', '..kk......kk....'],
+  ],
+};
+// '#rrggbb'를 조금 어둡게 (옷 그늘)
+const shade = (hex, k = 0.72) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * k).toString(16).padStart(2, '0')).join('');
+const personCache = new Map();
+function personCanvas(dir, frame, body, hair) {
+  const key = `${dir}/${frame}/${body}/${hair}`;
+  let c = personCache.get(key);
+  if (c) return c;
+  const side = dir === 'left' || dir === 'right';
+  const legs = side ? PERSON_LEGS.side[frame % 2] : PERSON_LEGS.front[frame % 3];
+  const rows = [...PERSON_BODY[side ? 'left' : dir], ...legs];
+  const pal = { h: hair, s: '#f1c9a0', e: '#1b1f27', w: '#eef1f4', b: body, d: shade(body), p: '#2b2f3a', k: '#15181e' };
+  c = document.createElement('canvas');
+  c.width = c.height = T;
+  const g = c.getContext('2d');
+  rows.forEach((row, y) => [...row].forEach((ch, x) => {
+    if (!pal[ch]) return;
+    const px = dir === 'right' ? 15 - x : x; // 오른쪽은 뒤집기
+    rect(g, pal[ch], px * 2, y * 2, 2, 2);
+  }));
+  personCache.set(key, c);
+  return c;
 }
+
+// 사람 공용 그림: 옷 색(body)과 머리 색(head)만 다르게. frame = 걷는 장면(0 서 있기)
+function drawPerson(ctx, x, y, dir, body, head, bob = 0, frame = 0) {
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath(); ctx.ellipse(x + 16, y + 30, 9, 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.drawImage(personCanvas(dir ?? 'down', frame, body, head), x, y + bob);
+}
+// 걷는 중이면 한 칸 걸음의 앞쪽 절반에 발을 내딛는 장면. 칸마다 왼발·오른발을 번갈아
+const walkFrame = (moving, t, x, y) => (moving && t < 0.6 ? 1 + ((x + y) & 1) : 0);
 
 function drawPlayer(ctx, p, cam) {
   const x = Math.round(p.px * T - cam.x), y = Math.round(p.py * T - cam.y);
   const bob = p.moving ? -Math.round(Math.sin(p.t * Math.PI) * 2) : 0;
-  drawPerson(ctx, x, y, p.dir, '#2f4a7a', '#2a2420', bob); // 수오: 교복 재킷
+  drawPerson(ctx, x, y, p.dir, '#2f4a7a', '#2a2420', bob, walkFrame(p.moving, p.t, p.x, p.y)); // 수오: 교복 재킷
 }
 
 // ── 아이템 아이콘 (14×14 픽셀 그림) ──

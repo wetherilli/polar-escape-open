@@ -1,14 +1,14 @@
-import { state, hasItem, saveGame, readSave, curseLevel } from './state.js?v=0.17.0';
-import { CURSE } from './data/curse.js?v=0.17.0';
-import { NOTES } from './data/notes.js?v=0.17.0';
-import { HELPS } from './data/helps.js?v=0.17.0';
-import { MAPS } from './data/maps.js?v=0.17.0';
-import { ITEMS } from './data/items.js?v=0.17.0';
-import { QUESTS } from './data/quests.js?v=0.17.0';
-import { CREATURES } from './data/creatures.js?v=0.17.0';
-import { fader } from './fader.js?v=0.17.0';
+import { state, hasItem, saveGame, readSave, curseLevel } from './state.js?v=0.18.0';
+import { CURSE } from './data/curse.js?v=0.18.0';
+import { NOTES } from './data/notes.js?v=0.18.0';
+import { HELPS } from './data/helps.js?v=0.18.0';
+import { MAPS } from './data/maps.js?v=0.18.0';
+import { ITEMS } from './data/items.js?v=0.18.0';
+import { QUESTS } from './data/quests.js?v=0.18.0';
+import { CREATURES } from './data/creatures.js?v=0.18.0';
+import { fader } from './fader.js?v=0.18.0';
 
-import { josa } from './text.js?v=0.17.0';
+import { josa } from './text.js?v=0.18.0';
 
 const subtitle = (opts) => (opts.sub && hasItem('translator') ? opts.sub : null);
 
@@ -158,6 +158,12 @@ export function createRunner(game) {
     //  who = 'player'(수오) 또는 이 맵의 이벤트 글자(NPC). await하면 말풍선이 사라질 때까지 기다린다
     bubble: (text, who = 'player', opts = {}) => game.bubble(text, who, opts.seconds),
     walk: (dir, steps = 1) => game.walk(dir, steps),     // 플레이어를 dir 쪽으로 steps칸 걷게 함 (막히면 거기서 멈춤)
+    move: (who, dir, steps = 1) => game.moveEvent(who, dir, steps), // 이 맵의 이벤트(NPC 글자)를 걷게 함. await하면 다 걸을 때까지
+    // 화면 번쩍임: color(기본 흰색)로 덮였다가 seconds초 동안 사라진다
+    async flash(color = '#ffffff', seconds = 0.4) {
+      game.flash = { color, until: game.time + seconds, dur: seconds };
+      await c.wait(seconds * 1000);
+    },
     face(dir) { game.player.dir = dir; },                // 플레이어가 dir 쪽을 보게 함
     follow(name, color) { game.follow(name, color); },  // 동행 시작 (뒤를 따라 걸음)
     unfollow() { game.follower = null; },
