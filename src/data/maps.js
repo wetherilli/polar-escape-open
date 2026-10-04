@@ -1,0 +1,872 @@
+// ─────────────────────────────────────────────
+// 배경: 극지연구소 송도 본원 (인천 연수구 송도미래로 26)
+// ※ 캠퍼스 배치는 작가가 알려준 구조를 따른다(2026-10-04). 동 안쪽 방 배치는 아직 임시.
+//   - 본관 ─ 제1·2·3연구동: 2층으로 이어짐. 연구동끼리는 1~2층이 이어지고 3~6층은 동마다 따로
+//   - 연구지원동: 북서동·남동동 두 동, 2층 구름다리로 연결. 카페는 북서동 1층의 남서쪽 절반
+//   - 경비실: 차량 진입로 오른쪽
+//   - 기숙사동·극지지원동: 밖으로 나가서 간다
+//   - 정문: 남동쪽 도로에서 본관 앞으로 진입. 부지 내 차도가 본관·연구동 사이를 지나 연구동 북서쪽을 따라간다
+//   - 출입문: 본관 1층 북동·남서 / 연구동마다 1층 북서(차도 쪽) / 제1연구동 북동 / 제3연구동 남서
+// ※ 대사·조건·아이템 등 스토리는 비워 둠. '(…)' 문구는 전부 자리표시.
+//
+// 맵 필드
+//  name     화면 왼쪽 위 표시 이름
+//  rows     타일 문자열.  #=벽  .=바닥  W=창문  ==책상  R=선반  G=설비  V=아래층이 내다보이는 트인 공간(난간)
+//                         ,=창고 바닥  :=보도  _=차도  ;=잔디  H=건물 외벽  F=부지 경계   (. , : _ ; 빼고 통과 불가)
+//           소문자(a-z) = 이벤트 위치 → events[글자]. 같은 글자를 여러 칸에 써도 된다.
+//  cold     { seconds, exit:[맵, 앵커, 방향] } — 체온이 seconds초 동안 바닥나면 exit로 이동
+//  tint     화면 색조 (rgba 문자열)
+//  lit      true면 불 켜진 방(세이브 포인트가 있는 야근 방 등) — 항상 밝다
+//  onEnter  async (c) => {} 맵에 들어올 때마다 실행
+//  internal true면 공개 배포본에서 뺄 맵 (CLAUDE.md 「공개 범위」)
+//
+// 이벤트 필드
+//  sprite   그릴 모양 (render.js SPRITES)
+//  solid    true면 통과 불가
+//  trigger  'action' = 바라보고 조사키 / 'touch' = 부딪히거나(solid) 밟으면(non-solid) 실행
+//  visible  (state) => bool. false면 없는 취급
+//  run      async (c) => { ... }  이벤트 스크립트. c의 명령은 events.js 참고
+//  turnToPlayer  true면 조사할 때 플레이어 쪽으로 돌아본다 (npc 헬퍼가 켜 둠)
+//  chatter  ['…'] 또는 { lines, every(초), range(칸) } — 플레이어가 가까이 있으면 가끔 머리 위 말풍선으로 혼잣말
+//  hiddenTag  '표시' — 그 표시를 드러내는 도움(helps.js reveal)을 받아야 보이는 숨은 요소
+//  glow     true면 밤에 그 칸 둘레로 따뜻한 불빛이 새어 나온다. lit 맵으로 이어지는 문(door·roomDoor 등)은 저절로 켜진다
+//  그 밖의 필드(color, lockFlag 등)는 스프라이트에서 o.ev로 읽는다.
+//
+// 문 방향 관례: 문이 왼쪽 벽이면 'right', 오른쪽 벽이면 'left', 위 벽이면 'down', 아래 벽이면 'up'
+//              (도착 칸 = 앵커 칸에서 그 방향으로 한 칸)
+// ─────────────────────────────────────────────
+
+import { PROLOGUE, PROLOGUE_START, STAFF } from './prologue.js?v=0.17.0';
+import { NPCS, EXAMPLE_ITEM } from './npcs.js?v=0.17.0';
+import { CH1 } from './chapter1.js?v=0.17.0';
+import { CREATURES } from './creatures.js?v=0.17.0';
+import { ITEMS } from './items.js?v=0.17.0';
+import { josa } from '../text.js?v=0.17.0';
+import { pickEnding } from './endings.js?v=0.17.0';
+import { helpTags } from '../state.js?v=0.17.0';
+
+export const START = PROLOGUE_START;
+
+// ── 자주 쓰는 이벤트 모양 ──
+// 아직 만들지 않은 방·층은 잠가 둔다(작가 지침 2026-10-04). 방을 만들면 그 문만 연결하면 된다.
+const lockedMsg = (label) => `[${label}]\n(잠겨 있다 — 문구 미정)`;
+// 헬퍼가 남기는 to·text·label·room 필드는 맵 편집기(tools/mapview.html)가 읽는다.
+// 문 방향(dir)을 빼면 도착 칸 옆의 빈 칸을 게임이 알아서 고른다(world.entryDir).
+const door = (sprite, map, anchor, dir) => ({
+  sprite, solid: true, trigger: 'touch', to: { map, anchor, dir }, run: (c) => c.transfer(map, anchor, dir),
+});
+const look = (sprite, text) => ({
+  sprite, solid: true, trigger: 'action', text, run: (c) => c.say(text),
+});
+const lockedRoom = (label) => ({
+  sprite: label.startsWith('화장실') ? 'wcDoor' : 'labDoor', // 화장실은 표지판 붙은 문
+  solid: true, trigger: 'touch', label, run: (c) => c.say(lockedMsg(label)),
+});
+// 대학원생 등 NPC. color = 옷 색(임시 그림 구분용). 대사는 name 이름표로 나온다.
+const npc = (name, color, run) => ({
+  sprite: 'npc', solid: true, trigger: 'action', turnToPlayer: true, color, name, run,
+});
+// 낮(오프닝)에는 볼일이 없는 건물 — 밤이 되면 열린다
+const dayLocked = (d) => ({
+  ...d,
+  run: (c) => (c.flag('day') ? c.say('(지금은 볼일이 없다 — 대사 미정)') : d.run(c)),
+});
+// 건물 출입구 (캠퍼스 ↔ 건물). 낮이든 밤이든, 들어갈 때도 나갈 때도 방문증이 있어야 지날 수 있다(작가 지침).
+// 건물 안의 문(호실·계단·구름다리)은 해당 없음.
+const PASS_MSG = '(방문증이 없어 출입문을 지날 수 없다 — 문구 미정)';
+const entrance = (sprite, map, anchor, dir) => ({
+  ...door(sprite, map, anchor, dir),
+  entrance: true, // check.mjs가 캠퍼스 문이 전부 entrance인지 본다
+  run: (c) => (c.has('visitorPass') ? c.transfer(map, anchor, dir) : c.say(PASS_MSG)),
+});
+// 연구지원동 북서동 출입문: 낮(오프닝)에는 북극곰 장면(pro 3) 뒤에 열린다
+const supADoor = (anchor, dir) => ({
+  ...entrance('glassDoor', 'supA_1f', anchor, dir),
+  run: (c) => (c.flag('day') && c.flag('pro') < 3
+    ? c.say('(지금은 볼일이 없다 — 대사 미정)')
+    : entrance('glassDoor', 'supA_1f', anchor, dir).run(c)),
+});
+
+// 소동물 채집 지점 (data/creatures.js). 밤(본편)에만 나오고, 잡으면 사라진다.
+//  fixture: true면 수조처럼 자리에 남는 물건 — 잡은 뒤에도 보이고 「비었다」고 나온다
+const creatureSpot = (id, { sprite = 'critter', fixture = false } = {}) => ({
+  sprite, solid: true, trigger: 'action', creature: id,
+  visible: (s) => !s.flags.day && (fixture || !s.creatures[id]),
+  async run(c) {
+    if (c.creature.status(id)) return c.say('(비어 있다 — 문구 미정)');
+    if (!c.creature.toolFor(id)) {
+      const need = CREATURES[id].tools.map((t) => ITEMS[t].name).join(' 또는 ');
+      return c.say(`(무언가 움직인다. 잡으려면 ${need}${josa(need, '이', '가')} 필요하다 — 문구 미정)`);
+    }
+    const pick = await c.choose('(무언가 움직인다 — 문구 미정)', ['잡는다', '그만둔다']);
+    if (pick !== 0) return;
+    c.creature.catch(id);
+    await c.say(`(${CREATURES[id].name} — 잡았다. 문구 미정)`);
+  },
+});
+// 세이브 포인트 (불 켜진 방에 둔다)
+const savePoint = {
+  sprite: 'savePoint', solid: true, trigger: 'action',
+  async run(c) {
+    const pick = await c.choose('저장할까요?', ['저장한다', '그만둔다']);
+    if (pick === 0) await c.save();
+  },
+};
+
+// 층 고르기 (계단·엘리베이터 공용). 각 층 맵의 같은 벽에 같은 글자(anchor)로 둔다.
+//  floors[i] = (i+1)층 맵 id, null이면 아직 없는 층
+//  dir = 도착 방향. 계단이 오른쪽 벽이면 'left'(기본), 왼쪽 벽이면 'right'
+//  opts.lo  = 이 계단이 닿는 가장 낮은 층. 그 아래 층은 목록에 안 나온다(floors에는 null로 둔다)
+//  opts.cut = 이 층과 바로 위층 사이가 무너져 있음. 사이를 건너려 하면 막히고 opts.onCut(c)를 부른다
+const CUT_MSG = '(계단이 무너져 있어 지나갈 수 없다 — 문구 미정)';
+const floorPicker = (kind, label, anchor, floors, here, dir = 'left', opts = {}) => async (c) => {
+  const nums = floors.map((_, i) => i + 1).filter((n) => n >= (opts.lo ?? 1));
+  const labels = nums.map((n) => `${n}층${n === here ? ' (지금)' : ''}`);
+  const pick = await c.choose(`[${label} ${kind}] 몇 층으로 갈까요?`, [...labels, '그만둔다']);
+  const to = nums[pick];
+  if (!to || to === here) return;
+  if (opts.cut && (here <= opts.cut) !== (to <= opts.cut)) {
+    await c.say(CUT_MSG);
+    return opts.onCut?.(c);
+  }
+  if (!floors[to - 1]) return c.say(lockedMsg(`${label} ${to}층`));
+  await c.transfer(floors[to - 1], anchor, dir);
+};
+const stairs = (label, anchor, floors, here, dir = 'left', opts = {}) => ({
+  sprite: 'stairs', solid: true, trigger: 'touch', floors, anchor, dir, lo: opts.lo, // floors·anchor·dir·lo는 check.mjs·편집기가 본다
+  run: floorPicker('계단', label, anchor, floors, here, dir, opts),
+});
+// 엘리베이터: unlockFlag가 켜지기 전에는 쓸 수 없다
+const elevator = (label, anchor, floors, here, unlockFlag, dir = 'left') => ({
+  sprite: 'elevator', solid: true, trigger: 'action', lockFlag: unlockFlag, floors, anchor, dir,
+  run: (c) => (c.flag(unlockFlag)
+    ? floorPicker('엘리베이터', label, anchor, floors, here, dir)(c)
+    : c.say('(엘리베이터 — 아직 쓸 수 없다. 해금 조건·대사 미정)')),
+});
+// 대학원생의 도움으로 열리는 문 (helps.js effects.open에 tag가 있는 도움을 받으면 열린다). 그 전에는 잠겨 있다
+const helpDoor = (label, tag, map, anchor, dir) => ({
+  sprite: 'labDoor', solid: true, trigger: 'touch', label, helpTag: tag, to: { map, anchor, dir },
+  run: (c) => (helpTags('open').includes(tag) ? c.transfer(map, anchor, dir) : c.say(lockedMsg(label))),
+});
+// 호실 문 (번호판이 붙은 문). map이 없으면 잠겨 있다
+const roomDoor = (room, map, anchor, dir) => ({
+  sprite: 'roomDoor', solid: true, trigger: 'touch', room, to: map ? { map, anchor, dir } : null,
+  run: map ? (c) => c.transfer(map, anchor, dir) : (c) => c.say(lockedMsg(room)),
+});
+
+// 동별 층 구성. 연구동 3~6층은 동마다 따로 만들 자리(지금은 null).
+// 연구지원동 엘리베이터 해금 플래그 (해금 조건은 작가가 정한다)
+const SUP_ELEVATOR = 'supElevator';
+
+const FLOORS = {
+  main: ['main_1f', 'research_2f'],                           // 본관 (3층 이상 있는지 미확인)
+  r1:   ['research_1f', 'research_2f', 'r1_3f', 'r1_4f', 'r1_5f', 'r1_6f'], // 제1연구동 계단1 (4↔5층이 무너짐)
+  r1b:  [null, null, null, 'r1_4f', 'r1_5f', 'r1_6f'],         // 제1연구동 계단2 (4~6층만)
+  r2:   ['research_1f', 'research_2f', null, null, null, null], // 제2연구동
+  r3:   ['research_1f', 'research_2f', null, null, null, null], // 제3연구동
+  supA: ['supA_1f', 'supA_2f', 'supA_3f'],                    // 연구지원동 북서동 (4층 이상 있는지 미확인)
+  supB: ['supB_1f', 'supB_2f', 'supB_3f'],                    // 연구지원동 남동동 (3층까지, 계단만)
+  polar: ['polar_1f', null],                                  // 극지지원동 (층수 미확인)
+  dorm: ['dorm_1f', null],                                    // 기숙사동 (층수 미확인)
+};
+
+// 제1연구동 계단1은 4층과 5층 사이가 무너져 있다(1장). 4~6층은 계단2로 오간다.
+const r1Stairs = (here) => stairs('제1연구동', 'x', FLOORS.r1, here, 'left', { cut: 4, onCut: CH1.stairsCollapsed });
+const r1Stairs2 = (here) => stairs('제1연구동 계단2', 'y', FLOORS.r1b, here, 'right', { lo: 4 });
+
+export const MAPS = {
+  // ── 캠퍼스 야외 (허브) ──
+  // 위가 교차로 쪽(북동), 아래가 송도국제대로343번길 쪽(남서). 지도를 건물 줄 방향으로 세워 그렸다.
+  // 축척: 한 칸 ≈ 2m. 캠퍼스 블록 약 150m(가로, 북서–남동) × 250m(세로, 북동–남서) = 75 × 125칸 (작가 설명 2026-10-04)
+  // 건물 크기·위치는 출입문 관계만 맞춘 임시 배치. 줄은 tools/mapview.html 편집기로 고쳐도 된다.
+  campus: {
+    name: '극지연구소 (야외)',
+    rows: [
+      'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF',
+      'F:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::F',
+      'F:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;:::::::::::::::::::::::::::::::::::::;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;:::::::::::::::::::::::::::::::::::::;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHaHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;HHHH;;;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHjHHHHHHHHHHHHHHHH;;;;HHHH;;;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;:::::::::::::::::::::::::::::::::::::::;;HHHH;;;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;:::::::::::::::::::::::::::::::::::::::;;HvHH;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::::::::::::::::::::::::::::::::::::::::::::::::::::::F',
+      'F;;;;;;;;;;;;;;;;;;;::::::::::::::::::::::::::::::::::::::::::::::::::::::F',
+      'F;;;;;;;;;;;;;;;;;;;::____________________________________________________g',
+      'F;;;;;;;;;;;;;;;;;;;::____________________________________________________g',
+      'F;;;;;;;;;;;;;;;;;;;::____________________________________________________g',
+      'F;;;;;;;;;;;;;;;;;;;::___:::::::::::::::::::::::::::::::::::::::::::::::::F',
+      'F;;;;;;;;;;;;;;;;;;;::___:::::::::::::::::::::::::::::::::::::::::::::::::F',
+      'F;;;;;;;;;;;;;;;;;;;::___::::::::::::::::::::::::::::::::;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::::::::::::::::::::::::::::::::;;;;;;;;;;;;;;;;;F',
+      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHkHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;HHHHHHHHHHHHHp::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;HHHHHHHHHHHHHH::::___::bHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;HHHHHHHHHHHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;::::::::::::::::::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;::::::::::::::::::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHeHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHH;;HHHHf::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHr;;HHHHH::::___::cHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHH;;HHHHH::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHH;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHH;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHH;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHH;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHH;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHH;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHH;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;HHHHHHHH;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;::::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::dHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::HHHHHHHHHHHHHlHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;x;;;;;;;;;;;::___:::::::::::::::::::::::::::::::::;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___:::::::::::::::::::::::::::::::::;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::::::::::::::::::::::::::::::::::;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::::::::::::::::::::::::::::::::::;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHhHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::;;;HHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;::___::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
+      'F:::::::::::::::::::::___:::::::::::::::::::::::::::::::::::::::::::::::::F',
+      'F:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::F',
+      'F:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::F',
+      'F:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::F',
+      'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF',
+    ],
+    onEnter: PROLOGUE.arrive,
+    events: {
+      g: {
+        sprite: 'gate', solid: true, trigger: 'action',
+        async run(c) {
+          if (c.flag('day')) return c.say('(정문 — 지금은 나갈 때가 아니다. 대사 미정)');
+          if (!c.curse.lifted()) return c.say('(정문 — 저주로 나갈 수 없다. 대사 미정)');
+          await c.end(pickEnding()); // 엔딩 분기: endings.js의 ENDING_RULES
+        },
+      },
+      v: { sprite: 'booth', solid: true, trigger: 'action', run: PROLOGUE.booth },  // 경비실
+      a: entrance('glassDoor', 'main_1f', 'a', 'down'),       // 본관 북동문
+      j: entrance('glassDoor', 'main_1f', 'j', 'up'),         // 본관 남서문
+      k: dayLocked(entrance('glassDoor', 'research_1f', 'n', 'down')),  // 제1연구동 북동문
+      b: dayLocked(entrance('glassDoor', 'research_1f', 'b', 'right')), // 제1연구동 북서문 (차도)
+      c: dayLocked(entrance('glassDoor', 'research_1f', 'c', 'right')), // 제2연구동 북서문 (차도)
+      d: dayLocked(entrance('glassDoor', 'research_1f', 'd', 'right')), // 제3연구동 북서문 (차도)
+      l: dayLocked(entrance('glassDoor', 'research_1f', 'u', 'up')),    // 제3연구동 남서문
+      p: dayLocked(entrance('door', 'polar_1f', 'o', 'right')),         // 극지지원동
+      e: supADoor('o', 'down'),                                    // 연구지원동 북서동 — 북동쪽 출입문
+      r: supADoor('r', 'left'),                                    // 연구지원동 북서동 — 남동쪽 출입문 (트인 공간 쪽)
+      f: dayLocked(entrance('door', 'supB_1f', 'o', 'right')),          // 연구지원동 남동동
+      h: dayLocked(entrance('door', 'dorm_1f', 'o', 'up')),             // 기숙사동
+      x: creatureSpot('exampleBugOut'),                             // 소동물 예시 (바깥)
+    },
+  },
+
+  // ── 본관 ──
+  main_1f: {
+    name: '본관 1층 로비',
+    onEnter: PROLOGUE.meetStaff,
+    rows: [
+      '##########a#############',
+      '#......................w',
+      't......................#',
+      '#...bbbbb..............h',
+      '#...........r..........#',
+      '#.==g..................#',
+      '#......................#',
+      '##########j#############',
+    ],
+    events: {
+      w: stairs('본관', 'w', FLOORS.main, 1),
+      h: door('glassDoor', 'exhibit', 'h', 'up'),
+      r: { ...npc(STAFF.name, STAFF.color, PROLOGUE.meetStaff), visible: (s) => s.flags.pro === 1 },
+      a: entrance('glassDoor', 'campus', 'a', 'up'),   // 북동문
+      j: entrance('glassDoor', 'campus', 'j', 'down'), // 남서문
+      b: look('panel', '(전시 패널 — 조사 텍스트)'),
+      g: look('note', '(출입 신고소 — 조사 텍스트)'),
+      t: lockedRoom('화장실 (본관 1층)'),
+    },
+  },
+
+  exhibit: {
+    name: '극지과학홍보관',
+    onEnter: PROLOGUE.enterExhibit,
+    rows: [
+      '##############',
+      '#............#',
+      '#.u......aaa.#',
+      '#............#',
+      '#.dd....nn...#',
+      '#............#',
+      '#............#',
+      '######h#######',
+    ],
+    events: {
+      h: door('glassDoor', 'main_1f', 'h', 'left'),
+      u: { sprite: 'bear', solid: true, trigger: 'action', run: PROLOGUE.bear },
+      a: look('bow', '(아라온호 뱃머리 구조물 — 조사 텍스트)'),
+      d: look('drill', '(빙하 시추기 모형 — 조사 텍스트)'),
+      n: look('penguin', '(펭귄 모형 — 조사 텍스트)'),
+    },
+  },
+
+  // ── 연구동 1층: 제1·2·3연구동이 한 맵 (위에서부터 제1 → 제3) ──
+  research_1f: {
+    name: '연구동 1층',
+    onEnter: CH1.enterResearch,
+    rows: [
+      '#####n####',
+      '#........#',
+      '#........x',
+      'b........#',
+      '#........k',
+      'w..r.....#',
+      '#........#',
+      '####..####',
+      '#........#',
+      '#........#',
+      '#........y',
+      'c........#',
+      '#........f',
+      'v........q',
+      '#........#',
+      '####..####',
+      '#........#',
+      '#........#',
+      '#........z',
+      'd........#',
+      '#........m',
+      't........#',
+      '#####u####',
+    ],
+    events: {
+      // 제1연구동
+      x: r1Stairs(1),
+      n: entrance('glassDoor', 'campus', 'k', 'up'),    // 북동문
+      b: entrance('glassDoor', 'campus', 'b', 'left'),  // 북서문 (차도)
+      k: door('labDoor', 'nightlab', 'i', 'down'),
+      // 제2연구동
+      y: stairs('제2연구동', 'y', FLOORS.r2, 1),
+      c: entrance('glassDoor', 'campus', 'c', 'left'),  // 북서문 (차도)
+      f: door('freezerDoor', 'coldlab', 'f', 'down'),
+      q: lockedRoom('전자현미경 분석실'),
+      // 제3연구동
+      z: stairs('제3연구동', 'z', FLOORS.r3, 1),
+      d: entrance('glassDoor', 'campus', 'd', 'left'),  // 북서문 (차도)
+      u: entrance('glassDoor', 'campus', 'l', 'down'),  // 남서문
+      m: lockedRoom('운석보관 클린룸'),
+      r: creatureSpot('exampleBugIn'), // 소동물 예시 (안)
+      w: lockedRoom('화장실 (제1연구동 1층)'),
+      v: lockedRoom('화장실 (제2연구동 1층)'),
+      t: lockedRoom('화장실 (제3연구동 1층)'),
+    },
+  },
+
+  // ── 2층: 본관 + 제1·2·3연구동이 한 맵 (위에서부터 본관 → 제3) ──
+  research_2f: {
+    name: '본관·연구동 2층',
+    onEnter: CH1.enterResearch,
+    rows: [
+      '##########',
+      'b........#',
+      '#........w',
+      'W........#',
+      '#...a....#',
+      '#........#',
+      '####..####',
+      'c........#',
+      '#........x',
+      '#........#',
+      'W........#',
+      '#........p',
+      '#........#',
+      '#........#',
+      '####..####',
+      'd........#',
+      '#........y',
+      '#........#',
+      'W........#',
+      '#........q',
+      '#........#',
+      '#........#',
+      '####..####',
+      'e........#',
+      '#........z',
+      'W........#',
+      '#........#',
+      '#........r',
+      '#........#',
+      '##########',
+    ],
+    events: {
+      w: stairs('본관', 'w', FLOORS.main, 2),
+      x: r1Stairs(2),
+      y: stairs('제2연구동', 'y', FLOORS.r2, 2),
+      z: stairs('제3연구동', 'z', FLOORS.r3, 2),
+      p: lockedRoom('제1연구동 2층 방'),
+      q: lockedRoom('제2연구동 2층 방'),
+      r: lockedRoom('제3연구동 2층 방'),
+      a: creatureSpot('exampleFish', { sprite: 'tank', fixture: true }), // 소동물 예시 (수조)
+      b: lockedRoom('화장실 (본관 2층)'),
+      c: lockedRoom('화장실 (제1연구동 2층)'),
+      d: lockedRoom('화장실 (제2연구동 2층)'),
+      e: lockedRoom('화장실 (제3연구동 2층)'),
+    },
+  },
+
+  // 세이브 포인트 예시: 불 켜진 방 + 야근 중인 대학원생 (위치 임시: 제1연구동 1층)
+  nightlab: {
+    name: '(야근 중인 연구실 — 예시)',
+    lit: true,
+    rows: [
+      '####i#######',
+      '#..........#',
+      '#.==...==..#',
+      '#..s....a..#',
+      '#..........#',
+      '############',
+    ],
+    events: {
+      i: door('labDoor', 'research_1f', 'k', 'left'),
+      s: savePoint,
+      a: npc(NPCS.gradA.name, NPCS.gradA.color, NPCS.gradA.run),
+    },
+  },
+
+  // 위치 임시: 제2연구동 1층
+  coldlab: {
+    name: '냉동실험실',
+    cold: { seconds: 30, exit: ['research_1f', 'f', 'left'] },
+    tint: 'rgba(110, 170, 255, 0.10)',
+    rows: [
+      '####f#######',
+      '#..........#',
+      '#.RRRR.RRR.#',
+      '#..........#',
+      '#.RRRR.RRR.#',
+      '#.........x#',
+      '############',
+    ],
+    events: {
+      f: door('freezerDoor', 'research_1f', 'f', 'left'),
+      x: EXAMPLE_ITEM, // 예시 퀘스트 물건
+    },
+  },
+
+  // ── 제1연구동 3~6층 (1장) — 긴 복도 양쪽으로 방이 늘어선 구조(작가 설명). 방 위치·개수는 임시 ──
+  //  계단1(x, 오른쪽 끝 → 도착 'left')은 4↔5층이 무너져 있고, 4~6층은 계단2(y, 왼쪽 끝 → 도착 'right')로 오간다.
+  r1_3f: {
+    name: '제1연구동 3층',
+    rows: [
+      '####a####a####a####a####a#',
+      '#........................x',
+      '#........................#',
+      '####a####a####a####a####t#',
+    ],
+    events: {
+      x: r1Stairs(3),
+      a: lockedRoom('제1연구동 3층 방'),
+      t: lockedRoom('화장실 (제1연구동 3층)'),
+    },
+  },
+  r1_4f: {
+    name: '제1연구동 4층',
+    rows: [
+      '####a####a####a####a####a#',
+      'y........................x',
+      '#........................#',
+      '####a####a####a####a####t#',
+    ],
+    events: {
+      x: r1Stairs(4),
+      y: r1Stairs2(4),
+      a: lockedRoom('제1연구동 4층 방'),
+      t: lockedRoom('화장실 (제1연구동 4층)'),
+    },
+  },
+  r1_5f: {
+    name: '제1연구동 5층',
+    rows: [
+      '####a####a####a####a####a#',
+      'y........................x',
+      '#........................#',
+      '####a####a####a####a####t#',
+    ],
+    events: {
+      x: r1Stairs(5),
+      y: r1Stairs2(5),
+      a: lockedRoom('제1연구동 5층 방'),
+      t: lockedRoom('화장실 (제1연구동 5층)'),
+    },
+  },
+  r1_6f: {
+    name: '제1연구동 6층',
+    rows: [
+      '####a####o####a####a####a#',
+      'y........................x',
+      '#........................#',
+      '####a####a####a####a####t#',
+    ],
+    events: {
+      x: r1Stairs(6),
+      y: r1Stairs2(6),
+      o: door('labDoor', 'r1_optics', 'o', 'up'), // 광학현미경실
+      a: lockedRoom('제1연구동 6층 방'),
+      t: lockedRoom('화장실 (제1연구동 6층)'),
+    },
+  },
+  // 광학현미경실 — 1장의 목적지. 안쪽 배치는 임시
+  r1_optics: {
+    name: '광학현미경실',
+    onEnter: CH1.reachOptics,
+    rows: [
+      '##########',
+      '#........#',
+      '#.GG..GG.#',
+      '#........#',
+      '#.==..==.#',
+      '#........#',
+      '#####o####',
+    ],
+    events: {
+      o: door('labDoor', 'r1_6f', 'o', 'down'),
+    },
+  },
+
+  // ── 극지지원동 (밖으로만 드나듦) ──
+  polar_1f: {
+    name: '극지지원동 1층',
+    rows: [
+      '##############',
+      '#............#',
+      'o............s',
+      '#............#',
+      '#............#',
+      '##############',
+    ],
+    events: {
+      s: stairs('극지지원동', 's', FLOORS.polar, 1),
+      o: entrance('door', 'campus', 'p', 'right'),
+    },
+  },
+
+  // ── 연구지원동 북서동 (작가 구조도 2026-10-04) ──
+  //  위 = 북동, 아래 = 남서, 왼쪽 = 북서, 오른쪽 = 남동. 가운데 복도(x4-6)를 따라 양옆에 방.
+  //  모든 층 공통: 계단2(y) · 계단1(x) · 엘리베이터(e) · 화장실(w) 자리가 같다. 계단·엘리베이터는 왼쪽(북서) 벽 → 도착 'right'.
+  //  화장실보다 남서쪽: 1층은 넓은 카페, 2층은 회의실, 3층은 없음(가장 좁다).
+  //  남동쪽 가운데(V)는 3층까지 트인 공간 — 1층에서는 그 자리에 남동쪽 출입문이 있다.
+  supA_1f: {
+    name: '연구지원동 북서동 1층',
+    onEnter: CH1.leaveRestroom,
+    rows: [
+      '#####o#####',
+      '####...####',
+      '###y...####',
+      '####...####',
+      '####...####',
+      '####...####',
+      '####...####',
+      '####...####',
+      '####...####',
+      '####...####',
+      '####......#',
+      '####......#',
+      '####......r',
+      '###x......#',
+      '####......#',
+      '####...####',
+      '###e...####',
+      'W......####',
+      'W......####',
+      '##wh...####',
+      '####...####',
+      '####...####',
+      '####...####',
+      '#.........#',
+      '#......=k=#',
+      '#.........#',
+      '#.==..==..#',
+      '#......t..#',
+      '#.........#',
+      '#.==..==..#',
+      '#.........#',
+      '#.........#',
+      '###########',
+    ],
+    events: {
+      o: entrance('glassDoor', 'campus', 'e', 'up'),    // 북동쪽 출입문
+      r: entrance('glassDoor', 'campus', 'r', 'right'), // 남동쪽 출입문 (트인 공간 쪽)
+      y: stairs('연구지원동 북서동 계단2', 'y', FLOORS.supA, 1, 'right'),
+      x: stairs('연구지원동 북서동 계단1', 'x', FLOORS.supA, 1, 'right'),
+      e: elevator('연구지원동 북서동', 'e', FLOORS.supA, 1, SUP_ELEVATOR, 'right'),
+      w: door('wcDoor', 'supA_wc', 'o', 'down'),
+      h: { sprite: 'fireBox', solid: true, trigger: 'action', run: CH1.fireBox }, // 소방함 — 비상용 손전등
+      k: { sprite: 'register', solid: true, trigger: 'action', run: PROLOGUE.cafeCounter },
+      t: {
+        ...npc(STAFF.name, STAFF.color, (c) => c.say('(자리에서 기다리는 중 — 대사 미정)', STAFF.name)),
+        dir: 'up', visible: (s) => s.flags.pro === 4,
+      },
+    },
+  },
+  supA_wc: {
+    name: '화장실',
+    onEnter: PROLOGUE.restroom,
+    rows: [
+      '####o#####',
+      '#........#',
+      '#.==..==.#',
+      '#........#',
+      '##########',
+    ],
+    events: {
+      o: door('door', 'supA_1f', 'w', 'up'),
+    },
+  },
+  // 2층: 창고·304·303 자리 = 회의실, 305·306 자리 = 강의실, 301·302 자리는 비어 있고 남동쪽 밖으로 구름다리
+  supA_2f: {
+    name: '연구지원동 북서동 2층',
+    rows: [
+      '###########',
+      '####...####',
+      '###y...####',
+      '####...####',
+      '####...####',
+      '####...f###',
+      '####...####',
+      '####...####',
+      '###g...####',
+      '####...####',
+      '####...VVV#',
+      '####...VVV#',
+      '####...VVV#',
+      '###x...VVV#',
+      '####...VVV#',
+      '####......#',
+      '###e......#',
+      '#.........#',
+      '#.........n',
+      '##w#......#',
+      '####......#',
+      '####......#',
+      '#####j#####',
+    ],
+    events: {
+      y: stairs('연구지원동 북서동 계단2', 'y', FLOORS.supA, 2, 'right'),
+      x: stairs('연구지원동 북서동 계단1', 'x', FLOORS.supA, 2, 'right'),
+      e: elevator('연구지원동 북서동', 'e', FLOORS.supA, 2, SUP_ELEVATOR, 'right'),
+      g: lockedRoom('회의실'),
+      f: lockedRoom('강의실'),
+      j: lockedRoom('회의실 (남서쪽)'),
+      w: lockedRoom('화장실 (2층)'),
+      n: door('door', 'supB_2f', 'n', 'right'), // 구름다리 → 남동동
+    },
+  },
+  // 3층: 306호(캠벨) = 북동쪽 끝 오른쪽 방
+  supA_3f: {
+    name: '연구지원동 북서동 3층',
+    rows: [
+      '###########',
+      '####...f###',
+      '###y...####',
+      '####...####',
+      '####...m###',
+      '###g...####',
+      '####...####',
+      '###d...####',
+      '####...m###',
+      '####...####',
+      '####...VVV#',
+      '###h...VVV#',
+      '####...VVV#',
+      '###x...VVV#',
+      '####...VVV#',
+      '####...b###',
+      '###e...####',
+      '#......####',
+      '#......####',
+      '##w#...a###',
+      '####...####',
+      '####...####',
+      '###########',
+    ],
+    events: {
+      y: stairs('연구지원동 북서동 계단2', 'y', FLOORS.supA, 3, 'right'),
+      x: stairs('연구지원동 북서동 계단1', 'x', FLOORS.supA, 3, 'right'),
+      e: elevator('연구지원동 북서동', 'e', FLOORS.supA, 3, SUP_ELEVATOR, 'right'),
+      f: roomDoor('306호', 'supA_306', 'o', 'up'),
+      m: roomDoor('305호 (화석실험실)'),
+      b: roomDoor('302호'),
+      a: roomDoor('301호'),
+      g: roomDoor('창고'),
+      d: roomDoor('304호'),
+      h: roomDoor('303호 (장비창고)'),
+      w: lockedRoom('화장실 (3층)'),
+    },
+  },
+  // 306호 — 5인 사무실. 지금 자리에 있는 사람은 캠벨뿐이다. 불 켜진 방.
+  //  배치는 작가가 그려 준 구조도(2026-10-04)를 따른다. 출입문은 아래쪽 벽 왼쪽.
+  //   왼쪽 줄: 캠벨(위) · 초이(아래, 비어 있음)
+  //   오른쪽 줄: ???(위) · 렐(가운데, 세이브 자리 — 렐의 컴퓨터) · ???(아래)
+  //  책상은 2×2 칸, 조사는 통로 쪽 칸에서.
+  supA_306: {
+    name: '연구지원동 306호',
+    lit: true,
+    rows: [
+      '#########',
+      '#....p=.#',
+      '#==a.==.#',
+      '#==.....#',
+      '#.......#',
+      '#....s=.#',
+      '#....l=.#',
+      '#=c.....#',
+      '#==.....#',
+      '#....q=.#',
+      '#....==.#',
+      '#.......#',
+      '#.......#',
+      '##o######',
+    ],
+    events: {
+      o: door('labDoor', 'supA_3f', 'f', 'left'),
+      a: { ...npc(NPCS.campbell.name, NPCS.campbell.color, NPCS.campbell.run), dir: 'left', chatter: NPCS.campbell.chatter }, // 캠벨 — 자기 책상 앞
+      s: savePoint,                                          // 렐의 자리 (세이브) — 수오에게 전화를 건 지인, 지금은 자리에 없다
+      l: look('desk', '(렐의 자리 — 조사 텍스트)'),
+      c: look('desk', '(초이의 자리 — 비어 있다. 조사 텍스트)'),
+      p: look('desk', '(??? 의 자리 — 조사 텍스트)'),
+      q: look('desk', '(??? 의 자리 — 조사 텍스트)'),
+    },
+  },
+
+  supB_1f: {
+    name: '연구지원동 남동동 1층',
+    rows: [
+      '############',
+      '#..........#',
+      'o..........s',
+      '#..........#',
+      '############',
+    ],
+    events: {
+      s: stairs('연구지원동 남동동', 's', FLOORS.supB, 1),
+      o: entrance('door', 'campus', 'f', 'right'),
+    },
+  },
+  supB_2f: {
+    name: '연구지원동 남동동 2층',
+    rows: [
+      '############',
+      '#..........#',
+      '#..........s',
+      'n..........#',
+      '############',
+    ],
+    events: {
+      s: stairs('연구지원동 남동동', 's', FLOORS.supB, 2),
+      n: door('door', 'supA_2f', 'n', 'left'), // 구름다리
+    },
+  },
+  // 남동동 3층: 작가도 가 본 적이 없는 곳이라 배치 미정. 계단만 있다.
+  supB_3f: {
+    name: '연구지원동 남동동 3층',
+    rows: [
+      '############',
+      '#..........#',
+      '#..........s',
+      '#..........#',
+      '############',
+    ],
+    events: {
+      s: stairs('연구지원동 남동동', 's', FLOORS.supB, 3),
+    },
+  },
+
+  // ── 기숙사동 (밖으로만 드나듦) ──
+  dorm_1f: {
+    name: '기숙사동 1층',
+    rows: [
+      '############',
+      '#..........#',
+      '#..........s',
+      '#..........#',
+      '#####o######',
+    ],
+    events: {
+      s: stairs('기숙사동', 's', FLOORS.dorm, 1),
+      o: entrance('door', 'campus', 'h', 'up'),
+    },
+  },
+};
