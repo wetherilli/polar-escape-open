@@ -1,21 +1,32 @@
-import { state, hasItem, saveGame, readSave, curseLevel } from './state.js?v=0.29.0';
-import { CURSE } from './data/curse.js?v=0.29.0';
-import { NOTES } from './data/notes.js?v=0.29.0';
-import { HELPS } from './data/helps.js?v=0.29.0';
-import { MAPS } from './data/maps.js?v=0.29.0';
-import { ITEMS } from './data/items.js?v=0.29.0';
-import { QUESTS } from './data/quests.js?v=0.29.0';
-import { CREATURES } from './data/creatures.js?v=0.29.0';
-import { fader } from './fader.js?v=0.29.0';
-import { sfx } from './audio.js?v=0.29.0';
+import { state, hasItem, saveGame, readSave, readAllSaves, curseLevel } from './state.js?v=0.30.0';
+import { CURSE } from './data/curse.js?v=0.30.0';
+import { NOTES } from './data/notes.js?v=0.30.0';
+import { HELPS } from './data/helps.js?v=0.30.0';
+import { MAPS } from './data/maps.js?v=0.30.0';
+import { ITEMS } from './data/items.js?v=0.30.0';
+import { QUESTS } from './data/quests.js?v=0.30.0';
+import { CREATURES } from './data/creatures.js?v=0.30.0';
+import { fader } from './fader.js?v=0.30.0';
+import { sfx } from './audio.js?v=0.30.0';
 
-import { josa } from './text.js?v=0.29.0';
+import { josa } from './text.js?v=0.30.0';
 
 const subtitle = (opts) => (opts.sub && hasItem('translator') ? opts.sub : null);
 
 // 이벤트 스크립트가 쓰는 명령 모음(c). 맵 데이터의 run(c)에서 호출한다.
 export function createRunner(game) {
   let running = false;
+
+  // 지금 자리를 slot에 저장 (c.save·c.autosave). 슬롯에 보일 요약: 진행 중인 메인 퀘스트(없으면 목표 줄)와 지금 있는 곳
+  const saveHere = (slot) => {
+    const p = game.player;
+    const main = Object.entries(state.quests).filter(([id, q]) => !q.done && QUESTS[id].type === 'main')
+      .sort((a, b) => b[1].order - a[1].order)[0];
+    const quest = main ? `${QUESTS[main[0]].name} — ${QUESTS[main[0]].steps[main[1].stage]}` : (state.flags.objective ?? '');
+    const ok = saveGame(slot, { map: game.world.id, x: p.x, y: p.y, dir: p.dir }, { quest, place: game.world.def.name });
+    if (ok) sfx('save');
+    return ok;
+  };
 
   const c = {
     // opts.sub = 한국어 자막. 번역기(translator)를 가지고 있을 때만 보인다.
@@ -183,6 +194,12 @@ export function createRunner(game) {
     //   until    (state) => bool. 참이 되면 추격 끝
     //   onCaught async (c) — 잡혔을 때 게임 오버 화면 전에 (없어도 됨)
     //   onEscape async (c) — 벗어났거나 until을 채웠을 때 (없어도 됨)
+    //   at: 'far'  플레이어에게서 걸어서 가장 먼 칸에 나타난다
+    //   needsLight 참이면 손전등을 켰을 때나 near칸(기본 2) 안일 때만 플레이어를 보고 쫓는다.
+    //              못 보면 놓치고 맵 안을 wanderSpeed(기본 1.8)로 돌아다닌다. 화면 붉은 테두리·추격 BGM도 쫓을 때만
+    //   onSpot   async (c) — 플레이어를 알아챈 순간마다 (처음 만났을 때 대사 등)
+    //   caughtText  잡혔을 때 암전 화면에 나올 글 (주면 더 세게 흔들린다)
+    //   onRetry  async (c) — 잡힌 뒤 「마지막 세이브에서 다시」로 돌아왔을 때
     //  잡히면 게임 오버 → 「마지막 세이브에서 다시 / 타이틀로」. 추격 중에는 메뉴와 저장을 쓸 수 없다.
     chase: {
       start(opts) { game.startChase(opts); },
@@ -211,14 +228,15 @@ export function createRunner(game) {
         const pick = await c.choose(`슬롯 ${slot + 1}에 덮어쓸까요?`, ['덮어쓴다', '그만둔다']);
         if (pick !== 0) return;
       }
-      const p = game.player;
-      // 슬롯에 보일 요약: 진행 중인 메인 퀘스트(없으면 목표 줄)와 지금 있는 곳
-      const main = Object.entries(state.quests).filter(([id, q]) => !q.done && QUESTS[id].type === 'main')
-        .sort((a, b) => b[1].order - a[1].order)[0];
-      const quest = main ? `${QUESTS[main[0]].name} — ${QUESTS[main[0]].steps[main[1].stage]}` : (state.flags.objective ?? '');
-      const ok = saveGame(slot, { map: game.world.id, x: p.x, y: p.y, dir: p.dir }, { quest, place: game.world.def.name });
-      if (ok) sfx('save');
+      const ok = saveHere(slot);
       await c.say(ok ? '저장했습니다.' : '저장하지 못했습니다.\n(브라우저 저장소가 막혀 있습니다)');
+    },
+    // 자동 저장 — 슬롯을 묻지 않는다. 빈 슬롯이 먼저, 다 찼으면 가장 오래된 슬롯에 덮어쓴다
+    async autosave() {
+      const saves = readAllSaves();
+      let slot = saves.findIndex((s) => !s);
+      if (slot < 0) slot = saves.reduce((old, s, i) => (s.savedAt < saves[old].savedAt ? i : old), 0);
+      game.toast(saveHere(slot) ? `자동 저장했습니다 (슬롯 ${slot + 1})` : '자동 저장하지 못했습니다');
     },
 
     async end(id) {

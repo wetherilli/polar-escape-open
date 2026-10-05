@@ -41,14 +41,15 @@
 //              (도착 칸 = 앵커 칸에서 그 방향으로 한 칸)
 // ─────────────────────────────────────────────
 
-import { PROLOGUE, PROLOGUE_START, STAFF } from './prologue.js?v=0.29.0';
-import { NPCS, EXAMPLE_ITEM } from './npcs.js?v=0.29.0';
-import { CH1 } from './chapter1.js?v=0.29.0';
-import { CREATURES } from './creatures.js?v=0.29.0';
-import { ITEMS } from './items.js?v=0.29.0';
-import { josa } from '../text.js?v=0.29.0';
-import { pickEnding } from './endings.js?v=0.29.0';
-import { helpTags } from '../state.js?v=0.29.0';
+import { PROLOGUE, PROLOGUE_START, STAFF } from './prologue.js?v=0.30.0';
+import { NPCS, EXAMPLE_ITEM } from './npcs.js?v=0.30.0';
+import { CH1 } from './chapter1.js?v=0.30.0';
+import { SHARK } from './shark.js?v=0.30.0';
+import { CREATURES } from './creatures.js?v=0.30.0';
+import { ITEMS } from './items.js?v=0.30.0';
+import { josa } from '../text.js?v=0.30.0';
+import { pickEnding } from './endings.js?v=0.30.0';
+import { helpTags } from '../state.js?v=0.30.0';
 
 export const START = PROLOGUE_START;
 
@@ -129,6 +130,8 @@ const savePoint = {
 //  opts.cut = 이 층과 바로 위층 사이가 무너져 있음. 사이를 건너려 하면 막히고 opts.onCut(c)를 부른다
 const CUT_MSG = '(계단이 무너져 있어 지나갈 수 없다 — 문구 미정)';
 //  opts.below = 지하층 맵 id 목록 [지하 1층, 지하 2층 …]. 지하층에서는 here가 -1, -2 …
+//  opts.belowOpen = (c) => bool. 거짓이면 지하층으로 내려갈 수 없다
+const BELOW_LOCKED = '(지하로는 아직 내려갈 수 없다 — 문구 미정)';
 const floorPicker = (kind, label, anchor, floors, here, dir = 'left', opts = {}) => async (c) => {
   const list = [
     ...(opts.below ?? []).map((map, i) => ({ n: -(i + 1), map, name: `지하 ${i + 1}층` })).reverse(),
@@ -143,6 +146,7 @@ const floorPicker = (kind, label, anchor, floors, here, dir = 'left', opts = {})
     return opts.onCut?.(c);
   }
   if (!to.map) return sayLocked(c, lockedMsg(`${label} ${to.name}`));
+  if (to.n < 0 && opts.belowOpen && !opts.belowOpen(c)) return sayLocked(c, BELOW_LOCKED);
   await c.transfer(to.map, anchor, dir);
 };
 const stairs = (label, anchor, floors, here, dir = 'left', opts = {}) => ({
@@ -194,8 +198,9 @@ const r3Stairs2 = (here) => stairs('제3연구동 계단2', 'h', FLOORS.r3, here
 
 // 연구지원동 북서동: 계단 둘과 엘리베이터 모두 지하 1층(주차장)까지 간다. here: 1~3층, 지하 1층은 -1
 const SUPA_BELOW = ['supA_b1'];
-const supAStairs = (n, anchor, here) => stairs(`연구지원동 북서동 계단${n}`, anchor, FLOORS.supA, here, 'right', { below: SUPA_BELOW });
-const supAElevator = (here) => elevator('연구지원동 북서동', 'e', FLOORS.supA, here, SUP_ELEVATOR, 'right', { below: SUPA_BELOW });
+const supABelowOpen = (c) => c.quest.started('ch1'); // 지하주차장은 1장이 시작된 뒤부터 (작가 지침 2026-10-05)
+const supAStairs = (n, anchor, here) => stairs(`연구지원동 북서동 계단${n}`, anchor, FLOORS.supA, here, 'right', { below: SUPA_BELOW, belowOpen: supABelowOpen });
+const supAElevator = (here) => elevator('연구지원동 북서동', 'e', FLOORS.supA, here, SUP_ELEVATOR, 'right', { below: SUPA_BELOW, belowOpen: supABelowOpen });
 
 export const MAPS = {
   // ── 캠퍼스 야외 (허브) ──
@@ -1389,6 +1394,7 @@ export const MAPS = {
   //  바닥은 콘크리트(,), 주차 칸(|), 기둥(#). 오른쪽 벽의 차량 출입구(s)는 캠퍼스의 지하주차장 입구(q)로 이어진다
   supA_b1: {
     name: '연구지원동 북서동 지하 1층 주차장',
+    onEnter: SHARK.enterParking, // 상어귀신이 나타나 쫓아온다 (shark.js)
     rows: [
       '######################',
       '#,,,,,,,,,,,,,,,,,,,,#',

@@ -13,12 +13,13 @@
 
 export const MOODS = ['보통', '기쁨', '놀람', '슬픔', '화남', '걱정'];
 
-import { NPCS } from './npcs.js?v=0.29.0';
-import { STAFF } from './prologue.js?v=0.29.0';
-import { LOOKS, lookFor } from './looks.js?v=0.29.0';
+import { NPCS } from './npcs.js?v=0.30.0';
+import { STAFF } from './prologue.js?v=0.30.0';
+import { LOOKS, lookFor } from './looks.js?v=0.30.0';
 
 export const PORTRAITS = {
   // 그림 파일이 생기면 여기에: '수오': { image: 'assets/portraits/suo.png' },
+  '상어귀신': { art: 'shark' }, // 코드로 직접 그린 얼굴(render.js PORTRAIT_ART) — 그림 파일이 생기면 image로
 };
 
 // looks.js에 적힌 사람, 그리고 맵에 서 있는 NPC(NPCS·홍보실 직원)는 저절로 초상화가 생긴다(위에 따로 적은 것이 먼저)

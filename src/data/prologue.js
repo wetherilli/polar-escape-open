@@ -10,7 +10,7 @@
 //   c.say(글, 화자) — 화자를 주면 이름표가 붙는다. 여러 줄은 c.say를 여러 번.
 // ─────────────────────────────────────────────
 
-import { CH1 } from './chapter1.js?v=0.29.0';
+import { CH1 } from './chapter1.js?v=0.30.0';
 
 export const STAFF ={ name: '홍보실 직원', color: '#c0577a' };
 
@@ -118,5 +118,6 @@ export const PROLOGUE = {
     await c.fade(0);
     await c.say('(정신을 차림 — 여기부터 본편. 대사 미정)');
     CH1.start(c);
+    await c.autosave(); // 1장 시작 — 처음 저장 (작가 지침 2026-10-05)
   },
 };

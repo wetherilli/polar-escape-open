@@ -1,23 +1,24 @@
-import { TILE, DIRS, MOVE_SPEED, RUN_SPEED, STAMINA_DRAIN, STAMINA_REGEN, STAMINA_RECOVER } from './config.js?v=0.29.0';
-import { Chaser } from './chase.js?v=0.29.0';
-import { sfx, bgm, volume, setVolume } from './audio.js?v=0.29.0';
-import { input } from './input.js?v=0.29.0';
-import { state, resetState, readSave, readAllSaves, hasAnySave, latestSlot, applySave, hasItem, curseEnv, helpMult, revealAround } from './state.js?v=0.29.0';
-import { World } from './world.js?v=0.29.0';
-import { Player, Follower } from './player.js?v=0.29.0';
-import { Dialog } from './dialog.js?v=0.29.0';
-import { Menu } from './menu.js?v=0.29.0';
-import { QUESTS } from './data/quests.js?v=0.29.0';
-import { ITEMS } from './data/items.js?v=0.29.0';
-import { guideTarget } from './guide.js?v=0.29.0';
-import { prefs, setPref } from './prefs.js?v=0.29.0';
-import { setupTouch, syncTouch } from './touch.js?v=0.29.0';
-import { fader } from './fader.js?v=0.29.0';
-import { createRunner } from './events.js?v=0.29.0';
-import { START, MAPS } from './data/maps.js?v=0.29.0';
-import { ENDINGS } from './data/endings.js?v=0.29.0';
-import { PATCH, VERSION } from './data/patch.js?v=0.29.0';
-import { camera, drawWorld, drawLighting, drawHUD, drawTitle, drawEnding, drawPicture, drawToast, drawChaseBorder, drawGameOver, drawBubbles, drawSettings, GEAR_BUTTON, drawSlots, SLOT_BOX, drawGuideArrow } from './render.js?v=0.29.0';
+import { TILE, DIRS, MOVE_SPEED, RUN_SPEED, STAMINA_DRAIN, STAMINA_REGEN, STAMINA_RECOVER } from './config.js?v=0.30.0';
+import { Chaser, farthestTile, randomFloor } from './chase.js?v=0.30.0';
+import { sfx, bgm, volume, setVolume } from './audio.js?v=0.30.0';
+import { input } from './input.js?v=0.30.0';
+import { state, resetState, readSave, readAllSaves, hasAnySave, latestSlot, applySave, hasItem, curseEnv, helpMult, revealAround } from './state.js?v=0.30.0';
+import { World } from './world.js?v=0.30.0';
+import { Player, Follower } from './player.js?v=0.30.0';
+import { Dialog } from './dialog.js?v=0.30.0';
+import { Menu } from './menu.js?v=0.30.0';
+import { QUESTS } from './data/quests.js?v=0.30.0';
+import { ITEMS } from './data/items.js?v=0.30.0';
+import { guideTarget } from './guide.js?v=0.30.0';
+import { prefs, setPref } from './prefs.js?v=0.30.0';
+import { setupTouch, syncTouch } from './touch.js?v=0.30.0';
+import { fader } from './fader.js?v=0.30.0';
+import { createRunner } from './events.js?v=0.30.0';
+import { resetShark } from './data/shark.js?v=0.30.0';
+import { START, MAPS } from './data/maps.js?v=0.30.0';
+import { ENDINGS } from './data/endings.js?v=0.30.0';
+import { PATCH, VERSION } from './data/patch.js?v=0.30.0';
+import { camera, drawWorld, drawLighting, drawHUD, drawTitle, drawEnding, drawPicture, drawToast, drawChaseBorder, drawChaserGlow, drawGameOver, drawBubbles, drawSettings, GEAR_BUTTON, drawSlots, SLOT_BOX, drawGuideArrow } from './render.js?v=0.30.0';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -41,7 +42,7 @@ const game = {
   beamAngle: 0,    // 손전등이 비추는 각도 (라디안). 플레이어 방향을 따라 돈다
   stamina: 1,      // 스태미나 0~1. Shift로 달리면 줄고, 걷거나 서 있으면 찬다
   tired: false,    // 스태미나가 바닥났음 → STAMINA_RECOVER까지 차야 다시 달린다
-  chase: null,     // 추격 중이면 { opts, chaser, maps, wakeAt, hidden, caught } (c.chase.start)
+  chase: null,     // 추격 중이면 { opts, chaser, maps, wakeAt, hidden, caught, seeing, goal } (c.chase.start)
   follower: null,  // 동행자 (c.follow)
   picture: null,   // 전체 화면 그림 id (c.picture)
   shake: null,     // { until, power } (c.shake)
@@ -110,25 +111,30 @@ const game = {
   // ── 추격 (c.chase.start) ──
   startChase(opts) {
     let at = opts.at;
-    if (typeof at === 'string') { // 앵커 글자 → 그 옆 빈 칸
+    if (at === 'far') at = farthestTile(this.world, this.player.x, this.player.y); // 플레이어에게서 걸어서 가장 먼 칸
+    else if (typeof at === 'string') { // 앵커 글자 → 그 옆 빈 칸
       const a = this.world.anchor(at);
       const d = DIRS[this.world.entryDir(a)];
       at = { x: a.x + d.x, y: a.y + d.y };
     }
     const chaser = new Chaser(opts.who ?? 'shark', opts.speed ?? 3.5);
     chaser.place(at.x, at.y);
-    this.chase = { opts, chaser, maps: opts.maps ?? [this.world.id], wakeAt: this.time + (opts.delay ?? 1), hidden: false, caught: false };
+    this.chase = { opts, chaser, maps: opts.maps ?? [this.world.id], wakeAt: this.time + (opts.delay ?? 1), hidden: false, caught: false, seeing: false, goal: null };
   },
   stopChase() { this.chase = null; },
 
   // 잡혔을 때: 게임 오버 → 마지막 세이브에서 다시 / 타이틀로
-  over: { sel: 0, options: [] },
-  gameOver() {
+  over: { sel: 0, options: [], text: null },
+  //  text = 화면에 나올 글(추격의 caughtText, 없으면 기본 문구), retry = 다시 시작한 뒤 돌릴 장면(추격의 onRetry)
+  afterRetry: null,
+  gameOver(text = null, retry = null) {
     this.chase = null;
     this.autoMove = null;
     this.scene = 'gameover';
+    this.over.text = text;
+    this.over.at = this.time;
     this.over.options = [
-      ...(latestSlot() >= 0 ? [{ label: '마지막 세이브에서 다시', run: () => this.continueGame(latestSlot()) }] : []),
+      ...(latestSlot() >= 0 ? [{ label: '마지막 세이브에서 다시', run: () => { this.afterRetry = retry; this.continueGame(latestSlot()); } }] : []),
       { label: '타이틀로', run: () => this.openTitle() },
     ];
     this.over.sel = 0;
@@ -136,6 +142,7 @@ const game = {
 
   newGame() {
     resetState();
+    resetShark();
     Object.assign(state.flags, structuredClone(START.flags ?? {}));
     this.begin(START);
   },
@@ -180,9 +187,12 @@ const game = {
     this.toasts = [];
     this.menu.hide();
     fader.alpha = 1;
+    const retry = this.afterRetry;
+    this.afterRetry = null;
     runner.run(async (c) => {
       await fader.to(0);
       await this.world.def.onEnter?.(c);
+      await retry?.(c); // 게임 오버 뒤 다시 시작했을 때의 장면
     });
   },
 
@@ -344,7 +354,13 @@ function updateStamina(dt, p) {
   return run ? RUN_SPEED : MOVE_SPEED;
 }
 
+// 손전등을 켜 들고 있나 (needsLight 추격자가 플레이어를 보는 조건)
+const lightOn = () => hasItem('flashlight') && !!state.flags.flashlightOn && !game.blackout;
+// 추격자가 플레이어를 보고 쫓는 중인가 — 화면 붉은 테두리·추격 BGM. needsLight가 아니면 늘 쫓는다
+const chaseAlert = () => !!game.chase && (!game.chase.opts.needsLight || game.chase.seeing);
+
 // 추격자 움직이기. 잡으면 게임 오버 장면을 시작한다.
+//  needsLight: 손전등을 켰거나 near칸 안이면 플레이어를 보고 쫓는다. 못 보면 놓치고 맵 안을 돌아다닌다(wanderSpeed)
 function updateChase(dt) {
   const ch = game.chase;
   if (!ch || ch.caught) return;
@@ -355,16 +371,29 @@ function updateChase(dt) {
   }
   if (game.time < ch.wakeAt) return;
   ch.hidden = false;
-  ch.chaser.update(dt * helpMult('chase'), game.world, game.player); // 도움(chase)이면 추격자가 느려진다
-  if (!ch.chaser.touches(game.player)) return;
+  const o = ch.opts, c = ch.chaser, p = game.player;
+  const sees = !o.needsLight || lightOn() || Math.abs(c.x - p.x) + Math.abs(c.y - p.y) <= (o.near ?? 2);
+  const spotted = sees && !ch.seeing;
+  ch.seeing = sees;
+  if (spotted && o.onSpot) return runner.run(o.onSpot); // 알아챈 순간 (처음 만났을 때 대사 등)
+  let target = p;
+  c.speed = o.speed ?? 3.5;
+  if (!sees) {
+    c.speed = o.wanderSpeed ?? 1.8;
+    if (!ch.goal || (c.x === ch.goal.x && c.y === ch.goal.y)) ch.goal = randomFloor(game.world);
+    target = ch.goal ?? c;
+  }
+  c.update(dt * helpMult('chase'), game.world, target); // 도움(chase)이면 추격자가 느려진다
+  if (!sees && !c.moving) ch.goal = null; // 길이 막혔으면 다른 곳으로
+  if (!c.touches(p)) return;
   ch.caught = true;
   sfx('caught');
-  runner.run(async (c) => {
-    await c.shake(0.4, 8);
-    await ch.opts.onCaught?.(c);
-    await c.fade(1);
-    game.gameOver();
-    await c.fade(0);
+  runner.run(async (r) => {
+    await r.shake(o.caughtText ? 0.8 : 0.4, o.caughtText ? 12 : 8);
+    await o.onCaught?.(r);
+    await r.fade(1);
+    game.gameOver(o.caughtText, o.onRetry);
+    await r.fade(0);
   });
 }
 
@@ -404,7 +433,7 @@ function updateCold(dt) {
 function wantedBgm() {
   if (game.scene === 'title' || game.scene === 'ending') return 'title';
   if (game.scene !== 'play') return null;
-  if (game.chase) return 'chase';
+  if (chaseAlert()) return 'chase';
   if (game.world.def.bgm !== undefined) return game.world.def.bgm;
   return state.flags.day ? 'day' : 'night';
 }
@@ -619,7 +648,8 @@ function draw() {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.globalAlpha = 1;
     }
-    if (game.chase) drawChaseBorder(ctx, t);
+    if (chaser) drawChaserGlow(ctx, chaser, cam, t); // 눈빛은 어둠 위에 — 불이 꺼져 있어도 보인다
+    if (chaseAlert()) drawChaseBorder(ctx, t);
     ctx.restore();
     if (game.picture) drawPicture(ctx, game.picture, t);
     else if (!game.blackout) drawHUD(ctx, game.world, state, game.warmth, currentObjective(), game.stamina, game.tired);

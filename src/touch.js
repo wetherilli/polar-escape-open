@@ -3,7 +3,7 @@
 // 터치 기기면 저절로 켜지고, 설정의 「화면 버튼」(prefs.touch)으로 켜고 끈다.
 // 세로 화면: 게임 화면 아래에 / 가로 화면: 게임 화면 위에 반투명하게 겹친다.
 
-import { prefs } from './prefs.js?v=0.29.0';
+import { prefs } from './prefs.js?v=0.30.0';
 
 const send = (type, code) => window.dispatchEvent(new KeyboardEvent(type, { code, key: code, bubbles: true }));
 // 손가락이 버튼 밖으로 미끄러져도 떼는 것을 받도록 붙잡는다. 못 붙잡아도(시험용 가짜 이벤트 등) 버튼은 동작한다

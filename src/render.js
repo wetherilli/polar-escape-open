@@ -1,8 +1,8 @@
-import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.29.0';
-import { ITEMS } from './data/items.js?v=0.29.0';
-import { lookFor } from './data/looks.js?v=0.29.0';
-import { SOLID_TILES as SOLID } from './world.js?v=0.29.0';
-import { isExplored } from './state.js?v=0.29.0';
+import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.30.0';
+import { ITEMS } from './data/items.js?v=0.30.0';
+import { lookFor } from './data/looks.js?v=0.30.0';
+import { SOLID_TILES as SOLID } from './world.js?v=0.30.0';
+import { isExplored } from './state.js?v=0.30.0';
 
 export const FONT = '18px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
 export const SMALL_FONT = '14px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
@@ -590,27 +590,86 @@ export function drawTileAt(ctx, ch, x, y, state, t = 0) {
   (TILES[ch] ?? wall)(ctx, x, y, { tx: 0, ty: 0, t, state });
 }
 
-// 추격자 임시 그림 (c.chase.start의 who). 그림이 생기면 여기만 바꾼다.
+// ── 상어귀신 (v0.30.0) — 하늘색 상어 후드집업을 깊이 눌러쓴 소년. 얼굴은 그늘, 빨간 눈만 보인다 ──
+// 16×16을 2배로(사람 그림과 같은 크기). 오른쪽은 왼쪽을 뒤집는다. 시안은 tools/shark.html(시안 C).
+//  k 테두리 · F 후드집업 · D 그늘 · K 후드의 상어 눈 · T 후드 이빨 · S 얼굴 그늘 · r 눈 · Z 지퍼 · w 후드 끈 · u 바지 · f 신발
+// 눈은 어둠 위에 한 번 더 그린다(drawChaserGlow) — 불이 꺼져 있어도 눈빛은 보인다.
+const SHARK_HEAD = {
+  down: ['.......kk.......', '......kFFk......', '....kFFFFFFk....', '...kFKFFFFKFk...', '..kFTFTFTFTFFk..', '..kFDDSSSSDDFk..', '..kFSrSSSSrSFk..', '...kFSSSSSSFk...'],
+  up: ['.......kk.......', '......kFFk......', '....kFFFFFFk....', '...kFFFFFFFFk...', '..kFFFFFFFFFFk..', '..kFFDFFFFDFFk..', '..kFFDFFFFDFFk..', '...kFFFFFFFFk...'],
+  left: ['........kk......', '.......kFFk.....', '.....kFFFFFk....', '....kFFKFFFFk...', '...kTFTFFFFFFk..', '...kDSSDFFFFFk..', '..kSrSSDFDFFFk..', '...kSSSSFFFFk...'],
+};
+const SHARK_BODY = {
+  down: ['...kFFwZZwFFk...', '..kFFFFZZFFFFk..', '..kDFFFZZFFFDk..', '..kSFFFZZFFFSk..', '...kDDFZZFDDk...'],
+  up: ['...kFFFFFFFFk...', '..kFFFFFFFFFFk..', '..kDFFFFFFFFDk..', '..kSFFFFFFFFSk..', '...kDDDDDDDDk...'],
+  left: ['....kFFFFFFk....', '....kFFFFFFk....', '....kFFDFFFk....', '....kFFSFFFk....', '....kDDDDDDk....'],
+};
+const SHARK_LEGS = {
+  front: [
+    ['....kuuk.kuuk...', '....kuuk.kuuk...', '....kffk.kffk...'],
+    ['....kuuk.kuuk...', '....kffk.kuuk...', '.........kffk...'],
+    ['....kuuk.kuuk...', '....kuuk.kffk...', '....kffk........'],
+  ],
+  side: [
+    ['.....kuuuk......', '.....kuuuk......', '....kfffk.......'],
+    ['....kuk.kuk.....', '...kuk...kuk....', '..kfk.....kfk...'],
+  ],
+};
+const SHARK_PAL = { k: '#1a2633', F: '#86c8e8', D: '#4f8fb2', K: '#1a2633', T: '#f4fbff', S: '#2a3a4a', r: '#ff3b4d', Z: '#dcecf5', w: '#f4fbff', u: '#26303e', f: '#cfd8e2' };
+const SHARK_EYES = { down: [[5, 6], [10, 6]], left: [[4, 6]], right: [[11, 6]], up: [] }; // 눈 칸 (16×16 기준)
+const sharkBob = (t) => Math.round(Math.sin(t * 3)); // 떠다니듯 1px 오르내림
+const sharkCache = new Map();
+function sharkCanvas(dir, frame) {
+  const key = `${dir}/${frame}`;
+  let c = sharkCache.get(key);
+  if (c) return c;
+  const side = dir === 'left' || dir === 'right';
+  const face = side ? 'left' : dir;
+  const legs = side ? SHARK_LEGS.side[frame % 2] : SHARK_LEGS.front[frame % 3];
+  const rows = [...SHARK_HEAD[face], ...SHARK_BODY[face], ...legs];
+  c = document.createElement('canvas');
+  c.width = c.height = T;
+  const g = c.getContext('2d');
+  rows.forEach((row, y) => [...row].forEach((ch, x) => {
+    if (!SHARK_PAL[ch]) return;
+    g.globalAlpha = y < 13 ? 1 : 1 - 0.5 * (y - 12) / 3; // 다리 쪽이 흐려진다
+    rect(g, SHARK_PAL[ch], (dir === 'right' ? 15 - x : x) * 2, y * 2, 2, 2);
+  }));
+  sharkCache.set(key, c);
+  return c;
+}
+function drawShark(ctx, x, y, dir, t, moving) {
+  const side = dir === 'left' || dir === 'right';
+  const step = moving ? Math.floor(t * 8) % (side ? 2 : 4) : 0;
+  const frame = side ? step : [0, 1, 0, 2][step];
+  const bob = sharkBob(t);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath(); ctx.ellipse(x + 16, y + 30, 8, 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(140, 200, 240, 0.13)'; // 몸 둘레 차가운 빛
+  ctx.beginPath(); ctx.arc(x + 16, y + 14 + bob, 17, 0, Math.PI * 2); ctx.fill();
+  ctx.drawImage(sharkCanvas(dir, frame), x, y + bob);
+}
+// 추격자의 눈빛 — 어둠(drawLighting) 위에 그린다. 불이 꺼진 어둠 속에서도 빨간 두 점이 또렷하게 맥박친다
+export function drawChaserGlow(ctx, chaser, cam, t) {
+  if (chaser.kind !== 'shark') return;
+  const x = Math.round(chaser.px * T - cam.x), y = Math.round(chaser.py * T - cam.y) + sharkBob(t);
+  const pulse = 0.8 + 0.2 * Math.sin(t * 5);
+  for (const [ex, ey] of SHARK_EYES[chaser.dir] ?? SHARK_EYES.down) {
+    const cx = x + ex * 2 + 1, cy = y + ey * 2 + 1;
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 14);
+    g.addColorStop(0, `rgba(255, 60, 80, ${0.9 * pulse})`);
+    g.addColorStop(0.35, `rgba(255, 40, 60, ${0.45 * pulse})`);
+    g.addColorStop(1, 'rgba(255, 30, 50, 0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(cx - 14, cy - 14, 28, 28);
+    rect(ctx, '#ff3b4d', cx - 2, cy - 2, 4, 4);
+    rect(ctx, '#ffe6ea', cx - 1, cy - 1, 2, 2);
+  }
+}
+
+// 추격자 그림 (c.chase.start의 who). 그림 파일이 생기면 여기만 바꾼다.
 const CHASERS = {
-  // 상어귀신: 상어 후드를 쓴 창백한 학생. 아래쪽이 흐려진다
-  shark(ctx, x, y, o) {
-    const fl = Math.sin(o.t * 6) * 1.5;
-    ctx.fillStyle = 'rgba(150, 190, 220, 0.25)';
-    ctx.beginPath(); ctx.arc(x + 16, y + 16, 15, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = 'rgba(70, 95, 125, 0.85)';
-    ctx.fillRect(x + 8, y + 13 + fl, 16, 12);
-    ctx.fillStyle = 'rgba(70, 95, 125, 0.4)';
-    ctx.fillRect(x + 9, y + 25 + fl, 14, 4);
-    ctx.fillStyle = '#5f7f9f'; // 후드
-    ctx.beginPath(); ctx.arc(x + 16, y + 11 + fl, 8, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(x + 13, y + 4 + fl); ctx.lineTo(x + 18, y - 3 + fl); ctx.lineTo(x + 20, y + 5 + fl); ctx.fill(); // 지느러미
-    if (o.dir !== 'up') {
-      rect(ctx, '#e6eef5', x + 12, y + 10 + fl, 8, 5);
-      rect(ctx, '#f4f8fb', x + 11, y + 15 + fl, 10, 2); // 이빨 줄
-      rect(ctx, '#c03040', x + 13, y + 11 + fl, 2, 2);
-      rect(ctx, '#c03040', x + 17, y + 11 + fl, 2, 2);
-    }
-  },
+  shark(ctx, x, y, o) { drawShark(ctx, x, y, o.dir ?? 'down', o.t, o.moving); },
   // 북극곰: 홍보관 모형보다 큰 진짜 곰
   bear(ctx, x, y, o) {
     const step = o.moving ? Math.round(Math.sin(o.t * 14)) : 0;
@@ -873,13 +932,73 @@ function portraitCanvas(L, mood = '보통') {
   portraitCache.set(key, c);
   return c;
 }
-// p = { look, image, moods } — look은 lookFor로 만든 겉모습(data/portraits.js가 넣어 준다). mood = 표정(MOODS)
+// 직접 그린 초상화 (data/portraits.js의 art). 상어귀신: 깊이 눌러쓴 상어 후드, 그늘진 얼굴에 빨간 눈 — 눈빛은 맥박친다
+const PORTRAIT_ART = {
+  shark: {
+    rows: [
+      '...........kk...........',
+      '..........kFFk..........',
+      '.........kFFFDk.........',
+      '......kkkFFFFFDkkk......',
+      '....kkFFFFFFFFFFFFkk....',
+      '...kFFFFFFFFFFFFFFFFk...',
+      '..kFFFKKFFFFFFFFKKFFFk..',
+      '..kFFFKKFFFFFFFFKKFFFk..',
+      '..kFTFTFTFTFTFTFTFTFTFk.',
+      '..kFDDDDDDDDDDDDDDDDDFk.',
+      '..kFSSSSSSSSSSSSSSSSSFk.',
+      '..kFSSSrrSSSSSSSrrSSSFk.',
+      '..kFSSSrrSSSSSSSrrSSSFk.',
+      '..kFSSSSSSSSSSSSSSSSSFk.',
+      '..kFSTSTSTSTSTSTSTSTSFk.',
+      '...kFFFFFFFFFFFFFFFFFk..',
+      '.....kFFFFFwZZwFFFFFk...',
+      '...kkFFFFFFwZZwFFFFFFkk.',
+      '..kFFFFFFFFFZZFFFFFFFFFk',
+      '.kDFFFFFFFFFZZFFFFFFFFDk',
+      '.kDFFFFFFFFFZZFFFFFFFFDk',
+      '.kDFFFFFFFFFZZFFFFFFFFDk',
+      '.kDFFFFFFFFFZZFFFFFFFFDk',
+      '.kDFFFFFFFFFZZFFFFFFFFDk',
+    ],
+    pal: { ...SHARK_PAL, k: '#0e1620' },
+    eyes: [[7, 11], [16, 11]], // 눈 왼쪽 위 칸 (2×2)
+  },
+};
+function artCanvas(id) {
+  const key = `art/${id}`;
+  let c = portraitCache.get(key);
+  if (c) return c;
+  const a = PORTRAIT_ART[id];
+  c = document.createElement('canvas');
+  c.width = c.height = PORTRAIT_SIZE;
+  const g = c.getContext('2d');
+  a.rows.forEach((row, y) => [...row].forEach((ch, x) => { if (a.pal[ch]) rect(g, a.pal[ch], x * 4, y * 4, 4, 4); }));
+  portraitCache.set(key, c);
+  return c;
+}
+function drawArtGlow(ctx, id, x, y) {
+  const pulse = 0.75 + 0.25 * Math.sin(performance.now() / 200);
+  for (const [ex, ey] of PORTRAIT_ART[id].eyes ?? []) {
+    const cx = x + ex * 4 + 4, cy = y + ey * 4 + 4;
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 16);
+    g.addColorStop(0, `rgba(255, 70, 90, ${0.6 * pulse})`);
+    g.addColorStop(1, 'rgba(255, 40, 60, 0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(cx - 16, cy - 16, 32, 32);
+    ctx.globalAlpha = pulse;
+    rect(ctx, '#fff0f2', cx - 3, cy - 3, 3, 3);
+    ctx.globalAlpha = 1;
+  }
+}
+// p = { look, image, moods, art } — look은 lookFor로 만든 겉모습(data/portraits.js가 넣어 준다). mood = 표정(MOODS). art = PORTRAIT_ART의 직접 그린 그림
 export function drawPortrait(ctx, p, x, y, mood = '보통') {
   ctx.fillStyle = '#16213a';
   ctx.fillRect(x, y, PORTRAIT_SIZE, PORTRAIT_SIZE);
   const path = p.moods?.[mood] ?? p.image;
   const img = path ? iconImage(path) : null; // 그림 파일이 다 읽히기 전(null)에는 임시 얼굴
   if (img) ctx.drawImage(img, x, y, PORTRAIT_SIZE, PORTRAIT_SIZE);
+  else if (p.art) { ctx.fillStyle = '#05070c'; ctx.fillRect(x, y, PORTRAIT_SIZE, PORTRAIT_SIZE); ctx.drawImage(artCanvas(p.art), x, y); drawArtGlow(ctx, p.art, x, y); }
   else ctx.drawImage(portraitCanvas(p.look ?? lookFor(null), mood), x, y);
   ctx.strokeStyle = '#8fa8cc';
   ctx.lineWidth = 2;
@@ -1218,10 +1337,18 @@ export function drawChaseBorder(ctx, t) {
   ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
 }
 
+// menu.text가 있으면(추격의 caughtText) 암전된 화면에 그 글이 천천히 떠오른다
 export function drawGameOver(ctx, t, menu) {
-  rect(ctx, '#0a0306', 0, 0, SCREEN_W, SCREEN_H);
   ctx.textBaseline = 'top';
-  centered(ctx, '(게임 오버 — 문구 미정)', 160, 'bold 30px "Malgun Gothic", sans-serif', '#e06070');
+  if (menu.text) {
+    rect(ctx, '#000', 0, 0, SCREEN_W, SCREEN_H);
+    ctx.globalAlpha = Math.max(0, Math.min(1, (t - menu.at - 0.3) / 1.2));
+    centered(ctx, menu.text, 170, '24px "Malgun Gothic", sans-serif', '#c9d2de');
+    ctx.globalAlpha = 1;
+  } else {
+    rect(ctx, '#0a0306', 0, 0, SCREEN_W, SCREEN_H);
+    centered(ctx, '(게임 오버 — 문구 미정)', 160, 'bold 30px "Malgun Gothic", sans-serif', '#e06070');
+  }
   menu.options.forEach((opt, i) => {
     const on = i === menu.sel;
     centered(ctx, on ? `▶ ${opt.label} ◀` : opt.label, 280 + i * 34, FONT, on ? '#ffd98a' : '#7d8aa0');

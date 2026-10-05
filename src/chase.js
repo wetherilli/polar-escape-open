@@ -1,4 +1,4 @@
-import { DIRS } from './config.js?v=0.29.0';
+import { DIRS } from './config.js?v=0.30.0';
 
 // 추격자 — 타일 단위로 움직이고, 한 칸 갈 때마다 BFS로 플레이어 쪽 다음 칸을 고른다.
 // 이동 중엔 x,y가 목적지, fx,fy가 출발지, t(0→1)가 진행도 (Player와 같은 방식).
@@ -63,6 +63,34 @@ export function nextStep(world, sx, sy, tx, ty) {
       if (goal) return first[k];
       queue.push([nx, ny]);
     }
+  }
+  return null;
+}
+
+// (sx,sy)에서 걸어서 가장 먼 빈 칸 — 추격자가 플레이어와 멀찍이 떨어져 나타나게 (c.chase.start의 at: 'far')
+export function farthestTile(world, sx, sy) {
+  const w = world.w, h = world.h;
+  const seen = new Uint8Array(w * h);
+  seen[sy * w + sx] = 1;
+  const queue = [[sx, sy]];
+  for (let i = 0; i < queue.length; i++) {
+    const [x, y] = queue[i];
+    for (const d of ['up', 'down', 'left', 'right']) {
+      const nx = x + DIRS[d].x, ny = y + DIRS[d].y;
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h || seen[ny * w + nx] || world.isBlocked(nx, ny)) continue;
+      seen[ny * w + nx] = 1;
+      queue.push([nx, ny]);
+    }
+  }
+  const [x, y] = queue[queue.length - 1];
+  return { x, y };
+}
+
+// 아무 빈 칸 하나 — 플레이어를 놓친 추격자가 돌아다닐 다음 목적지
+export function randomFloor(world) {
+  for (let i = 0; i < 200; i++) {
+    const x = Math.floor(Math.random() * world.w), y = Math.floor(Math.random() * world.h);
+    if (!world.isBlocked(x, y)) return { x, y };
   }
   return null;
 }

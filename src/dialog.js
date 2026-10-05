@@ -1,6 +1,6 @@
-import { SCREEN_W, SCREEN_H, TEXT_SPEED } from './config.js?v=0.29.0';
-import { panel, FONT, SMALL_FONT, drawPortrait, PORTRAIT_SIZE } from './render.js?v=0.29.0';
-import { PORTRAITS } from './data/portraits.js?v=0.29.0';
+import { SCREEN_W, SCREEN_H, TEXT_SPEED } from './config.js?v=0.30.0';
+import { panel, FONT, SMALL_FONT, drawPortrait, PORTRAIT_SIZE } from './render.js?v=0.30.0';
+import { PORTRAITS } from './data/portraits.js?v=0.30.0';
 
 const BOX_DEFAULT = { x: 16, y: SCREEN_H - 132, w: SCREEN_W - 32, h: 116, pad: 18, lineH: 26 };
 const LINES_PER_PAGE = 3;
