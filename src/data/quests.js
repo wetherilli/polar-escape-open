@@ -7,6 +7,9 @@
 //  giver  의뢰한 사람 (메뉴에 표시, 없어도 됨)
 //  desc   메뉴에서 보이는 설명
 //  steps  단계별 목표. 진행 중인 단계가 화면 왼쪽 위 목표 줄과 메뉴에 나온다.
+//  goals  단계별로 가야 할 곳 — 캐릭터 둘레의 길 안내 화살표가 가리킨다(설정에서 끌 수 있음). steps와 같은 순서
+//         { map: '맵 id' } 그 맵에 들어가면 됨 / { map, event: '글자' } 그 맵의 그 이벤트 / { map, x, y } 그 칸
+//         viaCut: true면 무너진 계단(cut)도 길로 친다 — 무너진 것을 보러 가는 단계. null이면 그 단계는 화살표 없음
 //
 // 이벤트에서 쓰는 법 (events.js의 c.quest)
 //   c.quest.start('id')        시작 — 「새 퀘스트」 알림
@@ -29,6 +32,13 @@ export const QUESTS = {
       '제1연구동 6층 광학현미경실로',
       '다른 계단으로 6층에 가기',
     ],
+    goals: [
+      { map: 'supA_306' },
+      { map: 'supA_306', event: 'a' }, // 캠벨
+      { map: 'research_1f' },
+      { map: 'r1_optics', viaCut: true }, // 계단1로 올라가다 4↔5층이 무너진 것을 보게
+      { map: 'r1_optics' },
+    ],
   },
   // 번역기 찾기 — Campbell은 영어밖에 못 해서, 연구지원동 2층에서 번역기를 찾는다 (작가 지침). 사이드 퀘스트
   //  번역기는 자막만 켜 준다 — 없어도 1장은 진행된다(CLAUDE.md). 장면은 chapter1.js
@@ -37,6 +47,7 @@ export const QUESTS = {
     name: '번역기 찾기',
     desc: '(설명 — 작가 작성)',
     steps: ['연구지원동 2층에서 번역기 찾기'],
+    goals: [{ map: 'supA_mr1', event: 't' }], // 2층 회의실(북서) 탁자
   },
   // 예시 — 시스템 확인용 견본. 실제 퀘스트를 쓰면 지워도 된다(npcs.js의 대학원생 A, coldlab의 예시 물건과 함께).
   example: {
@@ -48,5 +59,6 @@ export const QUESTS = {
       '(1단계 목표: 냉동실험실에서 예시 물건 찾기)',
       '(2단계 목표: 대학원생 A에게 가져가기)',
     ],
+    goals: [{ map: 'coldlab', event: 'x' }, { map: 'nightlab', event: 'a' }],
   },
 };

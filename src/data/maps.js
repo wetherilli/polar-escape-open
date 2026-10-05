@@ -12,7 +12,7 @@
 // 맵 필드
 //  name     화면 왼쪽 위 표시 이름
 //  rows     타일 문자열.  #=벽  .=바닥  W=창문  ==책상  R=선반  G=설비  S=세면대  V=아래층이 내다보이는 트인 공간(난간)
-//                         ,=창고 바닥  :=보도  _=차도  ;=잔디  |=주차장  P=필로티(건물 1층 차량 통로)  T=나무  *=화단  H=건물 외벽  F=부지 경계
+//                         ,=창고 바닥  :=보도  _=차도  ;=잔디  |=주차장  P=필로티(건물 1층 차량 통로)  T=나무  B=큰 나무(2×2 덩어리로)  *=화단  H=건물 외벽  F=부지 경계
 //                         (. , : _ ; | P 빼고 통과 불가)
 //           소문자(a-z) = 이벤트 위치 → events[글자]. 같은 글자를 여러 칸에 써도 된다.
 //  cold     { seconds, exit:[맵, 앵커, 방향] } — 체온이 seconds초 동안 바닥나면 exit로 이동
@@ -29,6 +29,8 @@
 //  visible  (state) => bool. false면 없는 취급
 //  run      async (c) => { ... }  이벤트 스크립트. c의 명령은 events.js 참고
 //  turnToPlayer  true면 조사할 때 플레이어 쪽으로 돌아본다 (npc 헬퍼가 켜 둠)
+//  useItem  { 아이템id: async (c) => {} } — 이 이벤트를 바라보고 소지품에서 그 아이템을 「사용」하면 실행
+//           (예: 잠긴 문에 열쇠 쓰기). 아이템을 없애려면 스크립트 안에서 c.take('id'). 없으면 아이템의 use(items.js)가 돈다
 //  chatter  ['…'] 또는 { lines, every(초), range(칸) } — 플레이어가 가까이 있으면 가끔 머리 위 말풍선으로 혼잣말
 //  hiddenTag  '표시' — 그 표시를 드러내는 도움(helps.js reveal)을 받아야 보이는 숨은 요소
 //  glow     true면 밤에 그 칸 둘레로 따뜻한 불빛이 새어 나온다. lit 맵으로 이어지는 문(door·roomDoor 등)은 저절로 켜진다
@@ -38,14 +40,14 @@
 //              (도착 칸 = 앵커 칸에서 그 방향으로 한 칸)
 // ─────────────────────────────────────────────
 
-import { PROLOGUE, PROLOGUE_START, STAFF } from './prologue.js?v=0.23.0';
-import { NPCS, EXAMPLE_ITEM } from './npcs.js?v=0.23.0';
-import { CH1 } from './chapter1.js?v=0.23.0';
-import { CREATURES } from './creatures.js?v=0.23.0';
-import { ITEMS } from './items.js?v=0.23.0';
-import { josa } from '../text.js?v=0.23.0';
-import { pickEnding } from './endings.js?v=0.23.0';
-import { helpTags } from '../state.js?v=0.23.0';
+import { PROLOGUE, PROLOGUE_START, STAFF } from './prologue.js?v=0.26.0';
+import { NPCS, EXAMPLE_ITEM } from './npcs.js?v=0.26.0';
+import { CH1 } from './chapter1.js?v=0.26.0';
+import { CREATURES } from './creatures.js?v=0.26.0';
+import { ITEMS } from './items.js?v=0.26.0';
+import { josa } from '../text.js?v=0.26.0';
+import { pickEnding } from './endings.js?v=0.26.0';
+import { helpTags } from '../state.js?v=0.26.0';
 
 export const START = PROLOGUE_START;
 
@@ -141,12 +143,12 @@ const floorPicker = (kind, label, anchor, floors, here, dir = 'left', opts = {})
   await c.transfer(to.map, anchor, dir);
 };
 const stairs = (label, anchor, floors, here, dir = 'left', opts = {}) => ({
-  sprite: 'stairs', solid: true, trigger: 'touch', floors, below: opts.below, anchor, dir, lo: opts.lo, // floors·below·anchor·dir·lo는 check.mjs·편집기가 본다
+  sprite: 'stairs', solid: true, trigger: 'touch', floors, below: opts.below, anchor, dir, lo: opts.lo, here, cut: opts.cut, // floors·below·anchor·dir·lo는 check.mjs·편집기, here·cut은 길 안내(guide.js)가 본다
   run: floorPicker('계단', label, anchor, floors, here, dir, opts),
 });
 // 엘리베이터: unlockFlag가 켜지기 전에는 쓸 수 없다
 const elevator = (label, anchor, floors, here, unlockFlag, dir = 'left', opts = {}) => ({
-  sprite: 'elevator', solid: true, trigger: 'action', lockFlag: unlockFlag, floors, below: opts.below, anchor, dir,
+  sprite: 'elevator', solid: true, trigger: 'action', lockFlag: unlockFlag, floors, below: opts.below, anchor, dir, here, cut: opts.cut,
   run: (c) => (c.flag(unlockFlag)
     ? floorPicker('엘리베이터', label, anchor, floors, here, dir, opts)(c)
     : c.say('(엘리베이터 — 아직 쓸 수 없다. 해금 조건·대사 미정)')),
@@ -209,125 +211,125 @@ export const MAPS = {
       'F:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::F',
       'F:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::F',
       'F;;;;;;;;;;;;;;;;;;;::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::;F',
-      'F;;;;;;;;;;;;;;;;;;;::;;;;;;;;;;;;;;:::::::::;;;;;;;;;;;;;;;;;;;T;;;;;:::;F',
-      'F;;;;T;;;;;;;;;;;;;;::;;;;T;;;;;;;;;:::::::::;;;;;T;;;;;;;;;;;;;;;;;;;:::;F',
-      'F;;;;;;;;;;;T;;;;;;;::;;;;;;;;;;;;;;:::::::::;;;;;;;;;;;;;;;;;;;;;;;;;:::;F',
-      'F;;;;;;;;;;;;;;;;;;;::;;;;;;;;;;;;;;:::::::::;;;;;;;;;;;;;;;;;;;;;;;;;:::;F',
-      'F;;;;;;;;;;;;;;;;;;;::::::::::::::::::::::::::;;;;;;;;;;;;T;;;;;;;;;;;:::;F',
-      'F;;;;;;;;;;;;;;;;;;;::::::::::::::::::::::::::;;;;;;;;;;;;;;;;;;;;;;;;:::;F',
-      'F;;;;;;;;;;;;;;;;;;;::;;;;;;;;;;;;;;::*:::*::;;;;;;;;;;;;;;;;;;;;;;;;;:::;F',
-      'F;;;;;;;;;;;;;;;;;;;::;;;;;;;;;;;;;;:::::::::;;;;;;;;;;;;;;;;;;;;;;;;;:::;F',
-      'F;;;;;;;;;;;;;;;T;;;::;;;;;;;;;;;;;;:::::::::;;;T;;;;;;;;;;;;;T;;;;;;;:::;F',
+      'F;;;;;;;;;;;;;;;T;;;::;;;;;;;;;;;;;;:::::::::;;;;;;;;;;;;;BB;;;;T;;;;;:::;F',
+      'F;T;;T;;;;;;;;;;;;;;::;;;;T;;;;;;;;;:::::::::;;;;;T;;;;;;;BB;;;;;;;;;;:::;F',
+      'F;;;;;;;;;;;T;;;;;;;::;;;;;;;T;;;;T;:::::::::;;;;;;;;T;;;;;;;;;;;;;;;;:::;F',
+      'F;;;;;;;;;;;;;;T;;;;::;;;;;;;;;;;;;;:::::::::;;;;;;;;;;;;;;;;;;;;;;;;;:::;F',
+      'F;T;;;T;;;;;;;;;;;T;::::::::::::::::::::::::::;T;;;;;;;;;;T;;;T;;;;;T;:::;F',
+      'F;;;;;;;;BB;;;;;;;;;::::::::::::::::::::::::::;;;;;;BB;;;;;;;;;;;;;;;;:::;F',
+      'F;;;;;;;;BB;;T;;;;;;::;;;;;;;;;;;;;;::*:::*::;;;;;;;BB;;;;;;;;;;;;;;;;:::;F',
+      'F;;BB;;;;;;;;;;;;;;;::;;;;;;BB;;;;;;:::::::::;;;;;;;;;;;;;;;;;;;;BB;;;:::;F',
+      'F;;BB;;;;;;;;;;;T;;;::;;;;;;BB;;T;;;:::::::::;;;T;;;;;;;T;;;;;T;;BB;;;:::;F',
+      'F;;;;;;T;;;;;T;;;;;;::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;T;;;;;;;;;;;;;;;;:::;F',
       'F;;;;;;;;;;;;;;;;;;;::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::;F',
-      'F;;;;;;;;;;;;;;;;;;;::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::;F',
-      'F;;;;;;;:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::;F',
+      'F;T;;;;;:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::;F',
       'F;;;;;;;:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::;F',
       'F;;;;;;;;;;;;;;;;;;;;;;;;;;;*;;;*;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHH;;;;;:::;F',
       'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHH;;;;;:::;F',
-      'F;;;;;;;;;HHHHHHHHHHHHHHHHHHHHaHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;:::;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHHHHHaHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;T;;;:::;F',
       'F;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;:::;F',
+      'F;;;;;BB;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;:::;F',
+      'F;;T;;BB;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;:::;F',
       'F;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;:::;F',
-      'F;;T;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;:::;F',
-      'F;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;:::;F',
-      'F;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;:::;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;T;;:::;F',
       'F;;;;;;;;;HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;:::;F',
       'F;;;;;;T;;HHHHHHHHHHHHHHHHHHHHjHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;HHHH:::;F',
       'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHH;HHHH:::;F',
-      'F;;;;;;;;;;;:::::::::::::::::::::::::::::::::::::::::___________::HvHH::::F',
-      'F;;;;;;;;;;;:::::::::::::::::::::::::::::::::::::::::___________::::::::::F',
+      'F;;BB;;;;;;;:::::::::::::::::::::::::::::::::::::::::___________::HvHH::::F',
+      'F;;BB;;;;;;;:::::::::::::::::::::::::::::::::::::::::___________::::::::::F',
       'F;;;;;;;;;;;:::::::::::::::::::::::::::::::::::::::::___________::::::::::F',
       'F;;;;;;;;;;;;;____________________________________________________________g',
-      'F;;;;;;;;;;;;;___________________________________________***______________g',
-      'F;;;;;;;;;;;;;___________________________________________***______________g',
+      'F;;;;;T;;;T;;;___________________________________________***______________g',
+      'F;T;;;;;;;;;;;___________________________________________***______________g',
       'F;;;;;;;;;;;::::::___:::::::::::::____:::::::::::::::____***____::::::::::F',
       'F;;;;;;;;;;;::::::___:::::::::::::____:::::::::::::::___________::::::::::F',
       'F;;;;;;;;;;;::::::___:::::::::::::____:::::::::::::::___________::::::::::F',
-      'F;;;;;;;;;;;;;;;;;___;;;;;;;::;;;;____;;;;;;;;;;;;;;;___________;;;;;;;;;;F',
-      'F;;;;;;;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;;;;;___________;;;;;;;;;;F',
-      'F;;;;;;;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;||||||||||||||||::PPPPPPPPHHkHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;BB;;;;;;;;___;;;;;;;::;;;;____;;;;;;;;;;;;;;;___________;;;;;;;;;;F',
+      'F;;;;;;;BB;;||||||||||||||||::;;T;____;;;;;;;;;;;;;;;___________;;;;;;;;;;F',
+      'F;;;;;;;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;T;;T;F',
+      'F;;T;;;;;;;;||||||||||||||||::PPPPPPPPHHkHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
       'F;;;;;;;;;;;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
-      'F;;;;;;;;;;;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;T;;;;;;;F',
-      'F;;;;;;;;;;;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
-      'F;;;;;;;;;;;||||||||||||||||::PPPPPPPPbHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
-      'F;;;;x;;;;;;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;T;;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;T;;;;;;;F',
+      'F;;;;;;;;;;;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;BB;F',
+      'F;;;;;;;;;;;||||||||||||||||::PPPPPPPPbHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;BB;F',
+      'F;;;;x;T;;;;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;T;;;;;;;;;F',
       'F;;;;;;;;;;;________________::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
-      'F;;;;;;;;;;;________________::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
-      'F;;;;;;;;;;;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;T;;;F',
-      'F;;;;;;;;;;;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;;;________________::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;T;;;;;;F',
+      'F;;;;T;;;;T;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;T;;;F',
+      'F;;;;;;;;;;;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;T;;;;;;;;;F',
       'F;;;;;;;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;||||||||||||||||::;;;;____;;T;;;;;T;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;T;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;;;||||||||||||||||::;T;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;BB;;;;F',
+      'F;;;;BB;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;T;;BB;;;;F',
+      'F;;;;BB;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;T;;HHHHHHH;;BB;;;;;;;;;T;F',
+      'F;;;;;;;;;;;||||||||||||||||::;;;;____;;T;;;;;T;;;;;HHHHHHH;;BB;;;;;;;;;;;F',
+      'F;;;;;;;;;;;||||||||||||||||::;T;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;T;;T;;;||||||||||||||||::;;;;____;;;;;T;;;;;T;;HHHHHHH;;;;;;;T;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;::;;;;____;T;;;;;;;;;;;;HHHHHHH;;;;T;;;;;;T;;;F',
+      'F;;;;;;;;;;T;;;;T;;;T;;;;;T;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;;;;T;;;;;;;;;;;;;;;;;;;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;T;;;;;;;F',
       'F;;T;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
       'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
       'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
       'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPcHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;T;;T;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;T;;;T;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
       'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;T;;;F',
       'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
-      'F;;;;;;T;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
-      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
-      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
-      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;;T;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;HHHHHHH;T;;;;;;;;;;;T;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;T;;;;F',
       'F;;T;;;;;;HHHHHHHHHHHHHHHHp;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;T;;;;;;;F',
-      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;T;;;;;T;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;T;;;;;T;;T;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;T;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
+      'F;;;;;T;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;T;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;T;;;;HHHHHHH;;T;;;;;;;;T;;;F',
       'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
-      'F;;;;;;T;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;T;;;T;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;T;;;;;;F',
       'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
       'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;T;;;F',
+      'F;;;;;T;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;BB;;;;;;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPdHHHHHHHHHHHHHHHHHHHHHHHH;;BB;;;;;;;F',
       'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
-      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPdHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
-      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
-      'F;;T;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
-      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
+      'F;;T;;T;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;BB;;F',
+      'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;BB;;F',
       'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
       'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHlHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
       'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;;;;;;;;;;;;;;;T;;;;;;;F',
-      'F_____________________________________;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
-      'i_____________________________________;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
-      'F_____________________________________;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
-      'F________________;;;;;HqHH;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
-      'F________________;;;;;HHHH;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
-      'F________________;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
+      'F_____________________________________;;;BB;;;;;;BB;;;;;;;;;;;;;;;;;;;;;;;F',
+      'i_____________________________________;;;BB;;;;;;BB;;;;;;;;;;;;;;;;;;;;;T;F',
+      'F_____________________________________;;;;;;;T;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
+      'F________________;;;;;HqHH;;;;;;;;;;;;;;;;;;;;;;;;;;;T;;;BB;;;;;;;;;;;;;;;F',
+      'F________________;;T;;HHHH;;;T;;;;;;;;;;;;;;;;;;;;;;;;;;;BB;;;;;;T;;T;;;;;F',
+      'F________________;;;;;;;;;;;;;;;;;;;;T;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
       'F________________;;HHHHHHHeHHHHHHHH;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
-      'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;T;;;F',
-      'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;F',
-      'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;;;;;;;;;T;;;;;;T;;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;BB;;BB;;;;;;;;;;;;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;BB;;BB;;;;;;;;;;;;;F',
       'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;F',
       'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHf;;;;;;;;;;;;;;;;;;;;F',
-      'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;T;;;;;;;;;;;;;;;;;;F',
       'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;F',
       'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;;HHHHHHHhHHHHHHHH;;F',
       'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHH;;F',
       'F________________;;HHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHHH;;HHHHHHHHHHHHHHHH;;F',
       'F________________;;HHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHH;;F',
-      'F________________;;HHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHH;;F',
-      'F________________;;HHHHHHHHHHHHHHHr;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHH;;F',
-      'F________________;;HHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHH;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;BB;;;;;;;T;;;;;;;;T;HHHHHHHHHHHHHHHH;;F',
+      'F________________;;HHHHHHHHHHHHHHHr;BB;;T;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHH;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;;;;;;;;;;;;T;;;;;;;HHHHHHHHHHHHHHHH;;F',
       'F________________;;HHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHH;;F',
       'F________________;;HHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHH;;F',
       'F________________;;HHHHHHHHHHHHHHHH;;FFFFFFFF;FFFFFFFFF;HHHHHHHHHHHHHHHH;;F',
       'F________________;;HHHHHHHHHHHHHHHH;;F;;;;;;;;;;;;;;;;F;;;;;;;;;;;;;;;;;;;F',
-      'F________________;;HHHHHHHHHHHHHHHH;;F;;;;;;;;;;;;;;;;F;;;;;;;;;;;;;;;;;;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;F;;;;;;;;;;;;;;;;F;;;;;;;;T;;;;;;;;;;F',
       'F________________;;HHHHHHHHHHHHHHHH;;F;;;;;;;;;;;;;;;;F;;;;;;;;;;;;;;;;;;;F',
       'F________________;;HHHHHHHHHHHHHHHH;;F;;;;;;;;;;;;;;;;F;;;;;T;;;;;;;;;;;;;F',
-      'F________________;;HHHHHHHHHHHHHHHH;;F;;;;;;;;;;;;;;;;F;;;;;;;;;;;;;;;;;;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;F;;;;;;;;;;;;;;;;F;;;;;;;;;;;;;;;T;;;F',
       'F________________;;HHHHHHHHHHHHHHHH;;F;;;;;;;;;;;;;;;;F;;;;;;;;;;;T;;;;;;;F',
+      'F;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHH;;F;;;;;;;;;;;;;;;;F;;T;;T;;;;;;;;;;;;;F',
       'F;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHH;;F;;;;;;;;;;;;;;;;F;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHH;;F;;;;;;;;;;;;;;;;F;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F;;;;;;;;;;;;;;;;F;;;;;;;;;;;;;;;;;;;F',
-      'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;FFFFFFFFFFFFFFFFFF;;;;;;;;;;;;;;;;;;;F',
+      'F;BB;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F;;;;;;;;;;;;;;;;F;;;;;;;;;T;;;;;;;;;F',
+      'F;BB;;;;;T;;;;;;;;;;;T;;;;;;;T;;;;;;;FFFFFFFFFFFFFFFFFF;;;;;;;;;;;;T;;;;T;F',
       'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;F',
       'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF',
     ],

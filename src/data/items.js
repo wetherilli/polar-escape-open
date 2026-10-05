@@ -5,12 +5,18 @@
 //              HUD·메뉴에는 「이름 ×개수」로 묶여 보인다.
 //  iconImage   사람이 그린 아이콘 그림 경로 (예: 'assets/icons/flashlight.png'). 없으면 render.js ICONS의 같은 id 그림,
 //              그것도 없으면 상자 그림이 이름 왼쪽 칸에 나온다.
+//  use         async (c) => {} — 소지품에서 「사용」(Enter)했을 때의 스크립트. 바라보는 이벤트에 그 아이템의 useItem이
+//              있으면 그쪽이 먼저 돈다(maps.js). 둘 다 없으면 「(여기서는 쓸 데가 없다)」.
 export const ITEMS = {
   visitorPass: { name: '방문증', desc: '(설명 미정)', flavor: '(플레이버 텍스트 미정)' },
   // 번역기: 가지고 있으면 영어 대사에 한국어 자막이 붙는다. 진행 조건으로는 쓰지 않는다.
   translator: { name: '번역기', desc: '(설명 미정)', flavor: '(플레이버 텍스트 미정)' },
   // 비상용 손전등: 북서동 1층 화장실 옆 소방함. 가지고 있으면 밤에 앞쪽을 부채꼴로 비춘다.
-  flashlight: { name: '비상용 손전등', desc: '(설명 미정)', flavor: '(플레이버 텍스트 미정)' },
+  //   「사용」하면 L 키처럼 켜고 끈다.
+  flashlight: {
+    name: '비상용 손전등', desc: '(설명 미정)', flavor: '(플레이버 텍스트 미정)',
+    use(c) { c.flag('flashlightOn', !c.flag('flashlightOn')); c.sfx('light'); },
+  },
   // ── 소동물 채집 도구 (creatures.js의 tools) ──
   net: { name: '잠자리채', desc: '(설명 미정)', flavor: '(플레이버 텍스트 미정)' },
   jar: {

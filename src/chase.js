@@ -1,4 +1,4 @@
-import { DIRS } from './config.js?v=0.23.0';
+import { DIRS } from './config.js?v=0.26.0';
 
 // 추격자 — 타일 단위로 움직이고, 한 칸 갈 때마다 BFS로 플레이어 쪽 다음 칸을 고른다.
 // 이동 중엔 x,y가 목적지, fx,fy가 출발지, t(0→1)가 진행도 (Player와 같은 방식).

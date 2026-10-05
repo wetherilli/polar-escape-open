@@ -1,6 +1,7 @@
-import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.23.0';
-import { ITEMS } from './data/items.js?v=0.23.0';
-import { SOLID_TILES as SOLID } from './world.js?v=0.23.0';
+import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.26.0';
+import { ITEMS } from './data/items.js?v=0.26.0';
+import { lookFor } from './data/looks.js?v=0.26.0';
+import { SOLID_TILES as SOLID } from './world.js?v=0.26.0';
 
 export const FONT = '18px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
 export const SMALL_FONT = '14px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
@@ -317,6 +318,43 @@ function windowFrame(ctx, x, y, isDay) {
   rect(ctx, c, x + 15, y + 7, 2, T - 13);
 }
 
+// 큰 나무: 64×64 한 그루를 미리 그려 두고, 2×2 칸이 각자 자기 4분의 1을 그린다.
+// 몇 번째 칸인지는 왼쪽·위로 이어진 B의 개수로 정한다(짝수 번째 = 왼쪽·위). check.mjs가 2×2로 놓였는지 본다
+const bigTreeCache = new Map();
+function bigTreeCanvas(n) {
+  let c = bigTreeCache.get(n);
+  if (c) return c;
+  c = document.createElement('canvas');
+  c.width = c.height = T * 2;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(0,0,0,0.3)';
+  g.beginPath(); g.ellipse(34, 57, 24, 6, 0, 0, Math.PI * 2); g.fill();
+  rect(g, ['#6b4a2e', '#2e2219'][n], 28, 38, 9, 20); // 줄기
+  rect(g, ['#5a3e26', '#261c15'][n], 33, 38, 4, 20);
+  const leaf = [['#2f6a2b', '#3f7d36', '#4f9442', '#5fa651'], ['#0f1c12', '#16251a', '#1d3022', '#233a28']][n];
+  const blob = (x, y, r, col) => { g.fillStyle = col; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); };
+  // 잎 덩어리 여럿을 겹쳐 둥근 수관 — 뒤(어두운 색)부터 앞(밝은 색)으로
+  [[32, 28, 26], [18, 30, 14], [46, 30, 14], [32, 16, 15]].forEach(([x, y, r]) => blob(x, y, r, leaf[0]));
+  [[30, 26, 21], [20, 24, 11], [43, 25, 12]].forEach(([x, y, r]) => blob(x, y, r, leaf[1]));
+  [[26, 20, 12], [40, 20, 9], [22, 32, 8]].forEach(([x, y, r]) => blob(x, y, r, leaf[2]));
+  blob(22, 15, 6, leaf[3]); blob(36, 13, 4, leaf[3]);
+  let s = 7; const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  for (let k = 0; k < 60; k++) { // 잎 결
+    const x = 8 + Math.floor(rnd() * 48), y = 4 + Math.floor(rnd() * 44);
+    if (Math.hypot(x - 32, y - 27) < 24) rect(g, leaf[Math.floor(rnd() * 4)], x, y, 1, 1);
+  }
+  bigTreeCache.set(n, c);
+  return c;
+}
+const grassTile = drawPixelTile('grass');
+function bigTreeTile(ctx, x, y, o) {
+  grassTile(ctx, x, y, o);
+  const tree = bigTreeCanvas(day(o) ? 0 : 1);
+  if (!o.world) return ctx.drawImage(tree, x, y, T, T); // 편집기 견본: 한 그루를 한 칸에 줄여서
+  const run = (dx, dy) => { let k = 0; while (o.world.tiles[o.ty + dy * (k + 1)]?.[o.tx + dx * (k + 1)] === 'B') k++; return k; };
+  ctx.drawImage(tree, (run(-1, 0) % 2) * T, (run(0, -1) % 2) * T, T, T, x, y, T, T);
+}
+
 const TILES = {
   '.': floor,
   '#': wall,
@@ -326,6 +364,7 @@ const TILES = {
   _: drawPixelTile('road'),       // 차도
   ';': drawPixelTile('grass'),    // 잔디
   T: drawPixelTile('tree'),       // 나무 (통과 불가)
+  B: bigTreeTile,                 // 큰 나무 (2×2 칸 한 그루, 통과 불가)
   '*': drawPixelTile('flowerbed'), // 화단 (통과 불가)
   '|': drawPixelTile('parking'),  // 주차장 (주차선)
   P: drawPixelTile('pilotis'),    // 필로티 (건물 1층을 차가 지나감)
@@ -455,7 +494,7 @@ const SPRITES = {
   booth(ctx, x, y, o) { // 경비실 창구
     rect(ctx, day(o) ? '#dfe3e8' : '#2a2f3a', x, y, T, T);
     rect(ctx, day(o) ? '#7fb3dc' : '#141a24', x + 4, y + 4, T - 8, 16);
-    if (day(o)) drawPerson(ctx, x, y - 6, 'down', '#3b4b63', '#2a2420');
+    if (day(o)) drawPerson(ctx, x, y - 6, 'down', lookFor('(경비원)'));
     rect(ctx, '#8a7350', x + 2, y + 20, T - 4, 6);
   },
   register(ctx, x, y, o) { // 카페 카운터 + 계산대
@@ -500,10 +539,10 @@ const SPRITES = {
     }
   },
   // ── 사람·세이브 ──
-  // NPC: 이벤트에 color(옷 색)를 준다. 말을 걸면 ev.dir이 플레이어 쪽으로 바뀐다.
+  // NPC: 겉모습은 data/looks.js(이름으로 찾음), 없으면 이벤트의 color가 옷 색. 이벤트에 look을 주면 덧입힌다. 말을 걸면 ev.dir이 플레이어 쪽으로 바뀐다.
   npc(ctx, x, y, o) {
     const walking = o.ev.px !== undefined; // c.move로 걷는 중이면 걷는 장면
-    drawPerson(ctx, x, y, o.ev.dir ?? 'down', o.ev.color ?? '#7a8a9a', '#2a2420', 0, walking ? 1 + ((o.ev.x + o.ev.y) & 1) : 0);
+    drawPerson(ctx, x, y, o.ev.dir ?? 'down', lookFor(o.ev.name, o.ev.color, o.ev.look), 0, walking ? 1 + ((o.ev.x + o.ev.y) & 1) : 0);
   },
   // 세이브 포인트: 켜진 노트북 + 스탠드 불빛
   savePoint(ctx, x, y, o) {
@@ -600,7 +639,7 @@ export function drawWorld(ctx, world, player, state, cam, t, follower = null, ch
   if (follower) {
     const fx = Math.round(follower.px * T - cam.x), fy = Math.round(follower.py * T - cam.y);
     const bob = follower.moving ? -Math.round(Math.sin(player.t * Math.PI) * 2) : 0;
-    drawPerson(ctx, fx, fy, follower.dir, follower.color, '#2a2420', bob, walkFrame(follower.moving, player.t, follower.x, follower.y));
+    drawPerson(ctx, fx, fy, follower.dir, lookFor(follower.name, follower.color), bob, walkFrame(follower.moving, player.t, follower.x, follower.y));
   }
   drawPlayer(ctx, player, cam);
   if (chaser) {
@@ -640,47 +679,107 @@ function drawOverhead(ctx, world, state, cam, x0, y0) {
   ctx.restore();
 }
 
-// 사람 공용 임시 그림: 몸통 색(body)과 머리 색(head)만 다르게
-// ── 사람 픽셀 그림 (16×16을 2배로) ──
-// 글자: h 머리카락 · s 피부 · e 눈 · w 셔츠 깃 · b 옷 · d 옷 그늘(팔) · p 바지 · k 신발
-// 몸(0~12줄)은 방향마다, 다리(13~15줄)는 걷는 장면마다. 오른쪽은 왼쪽을 뒤집어 쓴다.
-const PERSON_BODY = {
-  down: ['......hhhh......', '....hhhhhhhh....', '...hhhhhhhhhh...', '...hhhhhhhhhh...', '...hssssssssh...',
-    '...ssessssess...', '....ssssssss....', '.....bwwwwb.....', '....bbbwwbbb....', '...dbbbbbbbbd...',
-    '...dbbbbbbbbd...', '...sbbbbbbbbs...', '....pppppppp....'],
-  up: ['......hhhh......', '....hhhhhhhh....', '...hhhhhhhhhh...', '...hhhhhhhhhh...', '...hhhhhhhhhh...',
-    '...hhhhhhhhhh...', '....hhhhhhhh....', '.....bbbbbb.....', '....bbbbbbbb....', '...dbbbbbbbbd...',
-    '...dbbbbbbbbd...', '...sbbbbbbbbs...', '....pppppppp....'],
-  left: ['.....hhhhh......', '....hhhhhhh.....', '...hhhhhhhhh....', '...hhhhhhhhh....', '...sshhhhhhh....',
-    '..ssehhhhhhh....', '...sssshhhh.....', '.....wbbb.......', '....bbbbbb......', '....bbbdbb......',
-    '....bbbdbb......', '....bbbsbb......', '....pppppp......'],
+// ── 사람 픽셀 그림 (16×16을 2배로) — 겉모습은 data/looks.js ──
+// 머리(0~6줄, 긴 머리는 9줄까지 덧그림)는 머리 모양마다, 몸통(7~12줄)은 방향마다, 다리(13~15줄)는 걷는 장면마다.
+// 오른쪽은 왼쪽을 뒤집어 쓴다. 글자 → 색은 personPalette가 겉모습에 따라 정한다:
+//  h 머리카락 · H 머리 밝은 곳 · s 피부 · e 눈 · g 안경테 · c 모자 · C 모자 챙 · Y 모자 휘장
+//  b 윗옷 · d 윗옷 그늘 · a 아래팔(긴소매면 옷, 반팔이면 살) · w 안쪽 옷·깃 · t 넥타이·휘장 · m 가운 자락(아니면 바지)
+//  u 허벅지(바지) · l 정강이(긴 바지면 바지, 반바지면 살) · f 발(신발)
+const HAIR = {
+  short: {
+    down: ['.....hhhhhh.....', '....hhhhhhhh....', '...hhhhhhhhhh...', '...hhHhhhhhhh...', '...hhsshhsshh...', '...hsessssesh...', '....ssssssss....'],
+    up: ['.....hhhhhh.....', '....hhhhhhhh....', '...hhhhhhhhhh...', '...hhHhhhhhhh...', '...hhhhhhhhhh...', '...shhhhhhhhs...', '....ssssssss....'],
+    left: ['.....hhhhh......', '....hhhhhhh.....', '...hhHhhhhhh....', '...hhhhhhhhh....', '...sshhhhhhh....', '..ssehhhhhhh....', '...sssshhhh.....'],
+  },
+  buzz: {
+    down: ['................', '.....hhhhhh.....', '....hhhhhhhh....', '...hhhhhhhhhh...', '...hssssssssh...', '...ssessssess...', '....ssssssss....'],
+    up: ['................', '.....hhhhhh.....', '....hhhhhhhh....', '...hhhhhhhhhh...', '...hhhhhhhhhh...', '...shhhhhhhhs...', '....ssssssss....'],
+    left: ['................', '.....hhhhh......', '....hhhhhhh.....', '...hhhhhhhhh....', '...sssshhhhh....', '..ssesshhhhh....', '...sssssshh.....'],
+  },
+  curly: {
+    down: ['....h.hhhh.h....', '...hhhhhhhhhh...', '..hhhhhhhhhhhh..', '..hhHhhhhHhhhh..', '..hhhsshhsshhh..', '...hsessssesh...', '....ssssssss....'],
+    up: ['....h.hhhh.h....', '...hhhhhhhhhh...', '..hhhhhhhhhhhh..', '..hhHhhhhHhhhh..', '..hhhhhhhhhhhh..', '...hhhhhhhhhh...', '....ssssssss....'],
+    left: ['....h.hhh.h.....', '...hhhhhhhhh....', '..hhHhhhhhhhh...', '..hhhhhhhhhhh...', '...sshhhhhhhh...', '..ssehhhhhhh....', '...sssshhhh.....'],
+  },
+  bob: {
+    down: ['.....hhhhhh.....', '....hhhhhhhh....', '...hhhhhhhhhh...', '...hhHhhhhhhh...', '...hhhsssshhh...', '...hsessssesh...', '...hhsssssshh...'],
+    up: ['.....hhhhhh.....', '....hhhhhhhh....', '...hhhhhhhhhh...', '...hhHhhhhhhh...', '...hhhhhhhhhh...', '...hhhhhhhhhh...', '...hhhhhhhhhh...'],
+    left: ['.....hhhhh......', '....hhhhhhh.....', '...hhHhhhhhh....', '...hhhhhhhhh....', '...shhhhhhhh....', '..ssehhhhhhh....', '...sshhhhhhh....'],
+  },
+  long: {
+    down: ['.....hhhhhh.....', '....hhhhhhhh....', '...hhhhhhhhhh...', '...hhHhhhhhhh...', '...hhsssssshh...', '...hsessssesh...', '...hssssssssh...',
+      '...hh......hh...', '...hh......hh...', '...h........h...'],
+    up: ['.....hhhhhh.....', '....hhhhhhhh....', '...hhhhhhhhhh...', '...hhHhhhhhhh...', '...hhhhhhhhhh...', '...hhhhhhhhhh...', '...hhhhhhhhhh...',
+      '...hhhhhhhhhh...', '....hhhhhhhh....', '.....hhhhhh.....'],
+    left: ['.....hhhhh......', '....hhhhhhh.....', '...hhHhhhhhh....', '...hhhhhhhhh....', '...sshhhhhhh....', '..ssehhhhhhh....', '...ssshhhhhh....',
+      '.......hhhh.....', '.......hhhh.....', '........hh......'],
+  },
+  ponytail: {
+    down: ['.....hhhhhh.....', '....hhhhhhhh....', '...hhhhhhhhhh...', '...hhHhhhhhhh...', '...hhsssssshh...', '...hsessssesh...', '....ssssssss....'],
+    up: ['.....hhhhhh.....', '....hhhhhhhh....', '...hhhhhhhhhh...', '...hhHhhhhhhh...', '...hhhhhhhhhh...', '...shhhhhhhhs...', '....ssshhsss....',
+      '.......hh.......', '.......hh.......', '........h.......'],
+    left: ['.....hhhhh......', '....hhhhhhh.....', '...hhHhhhhhhh...', '...hhhhhhhhhhh..', '...sshhhhhhhhh..', '..ssehhhhhh.hh..', '...sssshhhh..h..'],
+  },
+  cap: {
+    down: ['................', '.....ccYYcc.....', '....cccccccc....', '...CCCCCCCCCC...', '...hssssssssh...', '...ssessssess...', '....ssssssss....'],
+    up: ['................', '.....cccccc.....', '....cccccccc....', '...cccccccccc...', '...hhhhhhhhhh...', '...shhhhhhhhs...', '....ssssssss....'],
+    left: ['................', '.....ccccY......', '....ccccccc.....', '.CCCcccccccc....', '...sshhhhhhh....', '..ssehhhhhhh....', '...sssshhhh.....'],
+  },
 };
-const PERSON_LEGS = {
+// 안경: 눈 줄(5줄)에 덧그린다
+const GLASSES = { down: '....gegssgeg....', left: '...geg..........' };
+const TORSO = {
+  down: ['.....bwwwwb.....', '....bbbwtbbb....', '...dbbbbbbbbd...', '...abbbbbbbba...', '...sbbbbbbbbs...', '....muuuuuum....'],
+  up: ['.....bbbbbb.....', '....bbbbbbbb....', '...dbbbbbbbbd...', '...abbbbbbbba...', '...sbbbbbbbbs...', '....muuuuuum....'],
+  left: ['.....wbbb.......', '....bbbbbb......', '....bbbdbb......', '....bbbabb......', '....bbbsbb......', '....muuuum......'],
+};
+const LEGS = {
   front: [ // 앞·뒤: 서 있기, 왼발, 오른발
-    ['....ppp..ppp....', '....ppp..ppp....', '....kkk..kkk....'],
-    ['....ppp..ppp....', '....ppp...kk....', '....kkk.........'],
-    ['....ppp..ppp....', '....kk...ppp....', '.........kkk....'],
+    ['....uuu..uuu....', '....lll..lll....', '....fff..fff....'],
+    ['....uuu..uuu....', '....lll...ff....', '....fff.........'],
+    ['....uuu..uuu....', '....ff...lll....', '.........fff....'],
   ],
   side: [ // 옆: 서 있기, 벌린 걸음
-    ['.....pppp.......', '.....pppp.......', '....kkkk........'],
-    ['....pp..pp......', '...pp....pp.....', '..kk......kk....'],
+    ['.....uuuu.......', '.....llll.......', '....ffff........'],
+    ['....uu..uu......', '...ll....ll.....', '..ff......ff....'],
   ],
 };
-// '#rrggbb'를 조금 어둡게 (옷 그늘)
-const shade = (hex, k = 0.72) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * k).toString(16).padStart(2, '0')).join('');
+// '#rrggbb'를 어둡게(k<1)·밝게(k>1)
+const shade = (hex, k = 0.72) => '#' + [1, 3, 5].map((i) => Math.min(255, Math.round(parseInt(hex.slice(i, i + 2), 16) * k)).toString(16).padStart(2, '0')).join('');
+const SHOE_COLORS = { shoes: '#15181e', sneakers: '#e4e6ea', slippers: '#3a6fb0' };
+function personPalette(L) {
+  const top = L.top, c = L.topColor, skin = L.skin;
+  const coat = top === 'labcoat';
+  const b = coat ? '#e9edf0' : c, d = coat ? '#c3c9cf' : shade(c);
+  const inner = { jacket: '#eef1f4', suit: '#eef1f4', uniform: '#eef1f4', labcoat: c, tshirt: c, hoodie: shade(c, 1.25), sweater: shade(c, 1.2) }[top] ?? '#eef1f4';
+  const accent = { suit: '#9b2c2c', uniform: '#d8b24a', labcoat: c }[top] ?? inner;
+  const capColor = L.capColor ?? shade(c, 0.8);
+  const pants = L.bottomColor, bare = L.bottom === 'shorts';
+  return {
+    h: L.hairColor, H: shade(L.hairColor, 1.45), s: skin, e: '#1b1f27', g: '#2b2f36',
+    c: capColor, C: shade(capColor, 0.6), Y: '#d8b24a',
+    b, d, a: top === 'tshirt' ? skin : d, w: inner, t: accent, m: coat ? '#e9edf0' : pants,
+    u: pants, l: bare ? skin : pants, f: L.shoeColor ?? SHOE_COLORS[L.shoes] ?? '#15181e',
+  };
+}
 const personCache = new Map();
-function personCanvas(dir, frame, body, hair) {
-  const key = `${dir}/${frame}/${body}/${hair}`;
+function personCanvas(dir, frame, L) {
+  const key = `${dir}/${frame}/${JSON.stringify(L)}`;
   let c = personCache.get(key);
   if (c) return c;
   const side = dir === 'left' || dir === 'right';
-  const legs = side ? PERSON_LEGS.side[frame % 2] : PERSON_LEGS.front[frame % 3];
-  const rows = [...PERSON_BODY[side ? 'left' : dir], ...legs];
-  const pal = { h: hair, s: '#f1c9a0', e: '#1b1f27', w: '#eef1f4', b: body, d: shade(body), p: '#2b2f3a', k: '#15181e' };
+  const face = side ? 'left' : dir;
+  const hair = (HAIR[L.hair] ?? HAIR.short)[face];
+  const legs = side ? LEGS.side[frame % 2] : LEGS.front[frame % 3];
+  const rows = [...hair.slice(0, 7), ...TORSO[face], ...legs].map((r) => [...r]);
+  // 7줄 넘는 머리(긴 머리·묶은 머리)는 몸통 위에 덧그린다
+  hair.slice(7).forEach((r, i) => [...r].forEach((ch, x) => { if (ch !== '.') rows[7 + i][x] = ch; }));
+  if (L.glasses && GLASSES[face]) [...GLASSES[face]].forEach((ch, x) => { if (ch !== '.') rows[5][x] = ch; });
+  const pal = personPalette(L);
   c = document.createElement('canvas');
   c.width = c.height = T;
   const g = c.getContext('2d');
-  rows.forEach((row, y) => [...row].forEach((ch, x) => {
+  rows.forEach((row, y) => row.forEach((ch, x) => {
     if (!pal[ch]) return;
     const px = dir === 'right' ? 15 - x : x; // 오른쪽은 뒤집기
     rect(g, pal[ch], px * 2, y * 2, 2, 2);
@@ -689,46 +788,99 @@ function personCanvas(dir, frame, body, hair) {
   return c;
 }
 
-// 사람 공용 그림: 옷 색(body)과 머리 색(head)만 다르게. frame = 걷는 장면(0 서 있기)
-function drawPerson(ctx, x, y, dir, body, head, bob = 0, frame = 0) {
+// 사람 그림: look = data/looks.js의 겉모습(lookFor로 만든 것). frame = 걷는 장면(0 서 있기)
+export function drawPerson(ctx, x, y, dir, look, bob = 0, frame = 0) {
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
   ctx.beginPath(); ctx.ellipse(x + 16, y + 30, 9, 3, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.drawImage(personCanvas(dir ?? 'down', frame, body, head), x, y + bob);
+  ctx.drawImage(personCanvas(dir ?? 'down', frame, look), x, y + bob);
 }
 // ── 대화 초상화 (24×24 픽셀 그림을 4배로 = 96×96) ──
-// 글자: h 머리카락 · s 피부 · e 눈 · n 코 그늘 · m 입 · w 셔츠 깃 · b 옷 · d 옷 그늘. 색은 data/portraits.js
+// 맨 얼굴·몸(PORTRAIT_ROWS) 위에 머리 모양(PORTRAIT_HAIR)과 안경을 덧그린다. 색은 맵 위 그림과 같은 겉모습(data/looks.js)에서.
+// 글자: 맵 위 그림과 같고(personPalette), 더해서 n 코 그늘 · m 입. 덧그림의 '.'은 그대로 둔다.
 // 그림 파일(image)이 있으면 그것을 그린다. 바꿀 곳은 drawPortrait 안쪽뿐.
 export const PORTRAIT_SIZE = 96;
 const PORTRAIT_ROWS = [
-  '........hhhhhhhh........', '......hhhhhhhhhhhh......', '.....hhhhhhhhhhhhhh.....', '....hhhhhhhhhhhhhhhh....',
-  '....hhhhhhhhhhhhhhhh....', '....hhhhsssshhsssshh....', '....hssssssssssssssh....', '....hssssssssssssssh....',
-  '....hsseesssssseessh....', '....hsseesssssseessh....', '....ssssssssssssssss....', '.....ssssssnnssssss.....',
+  '........................', '........................', '........ssssssss........', '......ssssssssssss......',
+  '.....ssssssssssssss.....', '....ssssssssssssssss....', '....ssssssssssssssss....', '....ssssssssssssssss....',
+  '....ssseesssssseesss....', '....ssseesssssseesss....', '....ssssssssssssssss....', '.....ssssssnnssssss.....',
   '.....ssssssssssssss.....', '......sssssmmsssss......', '.......ssssssssss.......', '.........ssssss.........',
-  '......bbbwwwwwwbbb......', '....bbbbbwwwwwwbbbbb....', '...bbbbbbbwwwwbbbbbbb...', '..dbbbbbbbbwwbbbbbbbbd..',
+  '......bbbwwwwwwbbb......', '....bbbbbwwwwwwbbbbb....', '...bbbbbbbwttwbbbbbbb...', '..dbbbbbbbbttbbbbbbbbd..',
   '..dbbbbbbbbbbbbbbbbbbd..', '.ddbbbbbbbbbbbbbbbbbbdd.', '.ddbbbbbbbbbbbbbbbbbbdd.', '.ddbbbbbbbbbbbbbbbbbbdd.',
 ];
+const PORTRAIT_HAIR = {
+  short: ['........hhhhhhhh........', '......hhhhhhhhhhhh......', '.....hhhhhHHhhhhhhh.....', '....hhhhhhhhhhhhhhhh....',
+    '....hhhhhhhhhhhhhhhh....', '....hhhh....hh....hh....', '....h..............h....', '....h..............h....',
+    '....h..............h....', '....h..............h....'],
+  buzz: ['........................', '........................', '.......hhhhhhhhhh.......', '.....hhhhhHhhhhhhhh.....',
+    '....hhhhhhhhhhhhhhhh....', '....hh............hh....'],
+  curly: ['......hh.hhhhh.hh.......', '.....hhhhhhhhhhhhhh.....', '....hhhhhHhhhhhHhhhh....', '...hhhhhhhhhhhhhhhhhh...',
+    '...hhhhhhhhhhhhhhhhhh...', '...hhhh.hhh..hhh.hhhh...', '...hhh............hhh...', '....hh............hh....',
+    '....h..............h....'],
+  bob: ['........hhhhhhhh........', '......hhhhhhhhhhhh......', '.....hhhhhHHhhhhhhh.....', '....hhhhhhhhhhhhhhhh....',
+    '....hhhhhhhhhhhhhhhh....', '....hhhhhhhhhhhhhhhh....', '...hhhhh........hhhhh...', '...hhh............hhh...',
+    '...hhh............hhh...', '...hhh............hhh...', '...hhh............hhh...', '...hhh............hhh...',
+    '...hhhh..........hhhh...', '....hhh..........hhh....'],
+  long: ['........hhhhhhhh........', '......hhhhhhhhhhhh......', '.....hhhhhHHhhhhhhh.....', '....hhhhhhhhhhhhhhhh....',
+    '....hhhhhhhhhhhhhhhh....', '....hhhh....hh....hh....', '...hhh............hhh...', '...hhh............hhh...',
+    '...hhh............hhh...', '...hhh............hhh...', '...hhh............hhh...', '...hhh............hhh...',
+    '...hhh............hhh...', '...hhh............hhh...', '...hhh............hhh...', '...hhh............hhh...',
+    '..hhhh............hhhh..', '..hhhh............hhhh..', '..hhhh............hhhh..', '..hhhh............hhhh..',
+    '..hhh..............hhh..', '..hh................hh..'],
+  ponytail: ['........hhhhhhhh........', '......hhhhhhhhhhhh......', '.....hhhhhHHhhhhhhh.....', '....hhhhhhhhhhhhhhhh....',
+    '....hhhhhhhhhhhhhhhh....', '....hhhh....hh....hh....', '....h..............hh...', '....h..............hhh..',
+    '...................hhh..', '...................hhh..', '...................hhh..', '...................hhh..',
+    '...................hhh..', '...................hhh..', '....................hh..'],
+  cap: ['........................', '.......cccccccccc.......', '.....ccccccYYcccccc.....', '....cccccccYYccccccc....',
+    '....cccccccccccccccc....', '..CCCCCCCCCCCCCCCCCCCC..', '....h..............h....', '....h..............h....'],
+};
+const PORTRAIT_GLASSES = ['', '', '', '', '', '', '', '......gggg....gggg......', '......g..gggggg..g......',
+  '......g..g....g..g......', '......gggg....gggg......'];
 const portraitCache = new Map();
-function portraitCanvas(body, hair) {
-  const key = `${body}/${hair}`;
+function portraitCanvas(L) {
+  const key = JSON.stringify(L);
   let c = portraitCache.get(key);
   if (c) return c;
-  const pal = { h: hair, s: '#f1c9a0', e: '#1b1f27', n: '#d9ab84', m: '#b86a5c', w: '#eef1f4', b: body, d: shade(body) };
+  const rows = PORTRAIT_ROWS.map((r) => [...r]);
+  const over = (lines) => lines.forEach((r, y) => [...r].forEach((ch, x) => { if (ch !== '.') rows[y][x] = ch; }));
+  over(PORTRAIT_HAIR[L.hair] ?? PORTRAIT_HAIR.short);
+  if (L.glasses) over(PORTRAIT_GLASSES);
+  const pal = { ...personPalette(L), n: shade(L.skin, 0.88), m: '#b86a5c', g: '#a7b0bd' }; // 안경테는 밝게 — 어두우면 눈과 붙어 선글라스처럼 보인다
   c = document.createElement('canvas');
   c.width = c.height = PORTRAIT_SIZE;
   const g = c.getContext('2d');
-  PORTRAIT_ROWS.forEach((row, y) => [...row].forEach((ch, x) => { if (pal[ch]) rect(g, pal[ch], x * 4, y * 4, 4, 4); }));
+  rows.forEach((row, y) => row.forEach((ch, x) => { if (pal[ch]) rect(g, pal[ch], x * 4, y * 4, 4, 4); }));
   portraitCache.set(key, c);
   return c;
 }
+// p = { look, image } — look은 lookFor로 만든 겉모습(data/portraits.js가 넣어 준다)
 export function drawPortrait(ctx, p, x, y) {
   ctx.fillStyle = '#16213a';
   ctx.fillRect(x, y, PORTRAIT_SIZE, PORTRAIT_SIZE);
   const img = p.image ? iconImage(p.image) : null; // 그림 파일이 다 읽히기 전(null)에는 임시 얼굴
   if (img) ctx.drawImage(img, x, y, PORTRAIT_SIZE, PORTRAIT_SIZE);
-  else ctx.drawImage(portraitCanvas(p.body ?? '#7a8a9a', p.hair ?? '#2a2420'), x, y);
+  else ctx.drawImage(portraitCanvas(p.look ?? lookFor(null)), x, y);
   ctx.strokeStyle = '#8fa8cc';
   ctx.lineWidth = 2;
   ctx.strokeRect(x + 1, y + 1, PORTRAIT_SIZE - 2, PORTRAIT_SIZE - 2);
+}
+
+// 길 안내 화살표: 캐릭터 둘레(반지름 26px)에서 목표 쪽을 가리키는 작은 삼각형. 천천히 숨 쉬듯 밝아졌다 흐려진다
+// (cx, cy) = 캐릭터 가운데(화면 좌표), angle = 목표 방향(라디안)
+export function drawGuideArrow(ctx, cx, cy, angle, t) {
+  const r = 26 + Math.sin(t * 4) * 2;
+  const x = cx + Math.cos(angle) * r, y = cy + Math.sin(angle) * r;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.globalAlpha = 0.75 + Math.sin(t * 4) * 0.2;
+  ctx.beginPath();
+  ctx.moveTo(7, 0); ctx.lineTo(-5, -6); ctx.lineTo(-2, 0); ctx.lineTo(-5, 6); ctx.closePath();
+  ctx.fillStyle = '#ffd98a';
+  ctx.strokeStyle = '#3a2a10';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fill();
+  ctx.restore();
 }
 
 // 걷는 중이면 한 칸 걸음의 앞쪽 절반에 발을 내딛는 장면. 칸마다 왼발·오른발을 번갈아
@@ -737,7 +889,7 @@ const walkFrame = (moving, t, x, y) => (moving && t < 0.6 ? 1 + ((x + y) & 1) : 
 function drawPlayer(ctx, p, cam) {
   const x = Math.round(p.px * T - cam.x), y = Math.round(p.py * T - cam.y);
   const bob = p.moving ? -Math.round(Math.sin(p.t * Math.PI) * 2) : 0;
-  drawPerson(ctx, x, y, p.dir, '#2f4a7a', '#2a2420', bob, walkFrame(p.moving, p.t, p.x, p.y)); // 수오: 교복 재킷
+  drawPerson(ctx, x, y, p.dir, lookFor('수오'), bob, walkFrame(p.moving, p.t, p.x, p.y)); // 겉모습은 data/looks.js
 }
 
 // ── 아이템 아이콘 (14×14 픽셀 그림) ──
@@ -1157,7 +1309,53 @@ export function drawSlots(ctx, s) {
 
 // 설정 화면 — 지금은 판 이력만. lines = 미리 펼친 줄 목록, scroll = 첫 줄 번호
 // settings = { sel, view: 'main' | 'history', lines, scroll, volume }
-const SETTINGS_LABELS = ['BGM 음량', '효과음 음량', '판 이력'];
+// 조작법 화면: 키보드 그림에 쓰는 키만 색칠하고, 아래에 색마다 하는 일. 키 배치는 input.js KEYMAP과 맞출 것
+const CONTROL_GROUPS = [
+  { keys: ['W', 'A', 'S', 'D', '↑', '←', '↓', '→'], color: '#6fa8dc', text: '이동 — W·A·S·D 또는 방향키' },
+  { keys: ['Shift'], color: '#7fc97f', text: '달리기 — Shift를 누른 채 이동' },
+  { keys: ['Enter', 'F'], color: '#ffd98a', text: '조사 · 대사 넘기기 · 결정' },
+  { keys: ['E'], color: '#f4a261', text: '소지품 열기 · 닫기' },
+  { keys: ['L'], color: '#c39bd3', text: '손전등 켜기 · 끄기' },
+  { keys: ['Esc', 'Q'], color: '#e07a7a', text: '메뉴 · 취소' },
+];
+// [글자, 너비(키 칸 수)] — 줄마다 왼쪽 들여쓰기(칸 수)
+const KEYBOARD_ROWS = [
+  { indent: 0, keys: [['Esc', 1.3]] },
+  { indent: 0.5, keys: 'QWERTYUIOP'.split('').map((k) => [k, 1]) },
+  { indent: 0.8, keys: [...'ASDFGHJKL'.split('').map((k) => [k, 1]), ['Enter', 1.9]] },
+  { indent: 0, keys: [['Shift', 1.8], ...'ZXCVBNM'.split('').map((k) => [k, 1]), ['Shift', 1.8]] },
+];
+function drawKey(ctx, label, x, y, w, h) {
+  const g = CONTROL_GROUPS.find((gr) => gr.keys.includes(label));
+  rect(ctx, '#0b0f18', x, y + 3, w, h); // 키 그림자
+  rect(ctx, g ? g.color : '#1f2738', x, y, w, h);
+  rect(ctx, g ? 'rgba(255,255,255,0.25)' : '#2a3448', x, y, w, 2);
+  ctx.font = label.length > 1 && !'↑←↓→'.includes(label) ? `bold 11px ${SMALL_FONT.split(' ').slice(1).join(' ')}` : `bold ${SMALL_FONT}`;
+  ctx.fillStyle = g ? '#14181f' : '#56657a';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, x + w / 2, y + h / 2 - 7);
+  ctx.textAlign = 'left';
+}
+function drawControls(ctx) {
+  const u = 30, gap = 3, h = 26, x0 = 66, y0 = 104;
+  KEYBOARD_ROWS.forEach((row, r) => {
+    let x = x0 + row.indent * u;
+    for (const [label, w] of row.keys) { drawKey(ctx, label, x, y0 + r * (h + 8), w * u - gap, h); x += w * u; }
+  });
+  // 방향키: 키보드 오른쪽 아래
+  const ax = x0 + 12.4 * u, ay = y0 + 2 * (h + 8);
+  drawKey(ctx, '↑', ax + u, ay, u - gap, h);
+  ['←', '↓', '→'].forEach((k, i) => drawKey(ctx, k, ax + i * u, ay + h + 8, u - gap, h));
+  // 색마다 하는 일
+  ctx.font = SMALL_FONT;
+  CONTROL_GROUPS.forEach((g, i) => {
+    const y = y0 + 4 * (h + 8) + 18 + i * 26;
+    rect(ctx, g.color, 70, y + 3, 14, 14);
+    ctx.fillStyle = '#c9d6ea';
+    ctx.fillText(g.text, 96, y + 1);
+  });
+}
+
 export function drawSettings(ctx, settings) {
   rect(ctx, 'rgba(2, 4, 10, 0.92)', 0, 0, SCREEN_W, SCREEN_H);
   panel(ctx, 40, 30, SCREEN_W - 80, SCREEN_H - 60);
@@ -1166,34 +1364,52 @@ export function drawSettings(ctx, settings) {
   ctx.fillStyle = '#ffd98a';
   ctx.fillText('설정', 60, 46);
   if (settings.view === 'main') {
-    // 음량 두 줄(막대 + ◀ ▶) + 판 이력
-    SETTINGS_LABELS.forEach((label, i) => {
-      const y = 100 + i * 52, on = i === settings.sel;
+    // 음량(막대 + ◀ ▶) · 켜고 끄기 · 펼쳐 보는 화면
+    settings.rows.forEach((row, i) => {
+      const y = 96 + i * 50, on = i === settings.sel;
       if (on) { ctx.fillStyle = 'rgba(255, 217, 138, 0.12)'; ctx.fillRect(52, y - 10, SCREEN_W - 104, 42); }
       ctx.font = FONT;
       ctx.fillStyle = on ? '#ffd98a' : '#c9d6ea';
-      ctx.fillText(`${on ? '▶ ' : '   '}${label}`, 62, y);
-      if (i < 2) {
-        const v = settings.volume[i === 0 ? 'bgm' : 'sfx'];
+      ctx.fillText(`${on ? '▶ ' : '   '}${row.label}`, 62, y);
+      ctx.font = SMALL_FONT;
+      if (row.kind === 'volume') {
+        const v = settings.volume[row.id];
         rect(ctx, '#1a2233', 260, y + 4, 200, 14);
         rect(ctx, on ? '#ffd98a' : '#7d8aa0', 260, y + 4, Math.round(200 * v), 14);
-        ctx.font = SMALL_FONT;
         ctx.fillStyle = '#c9d6ea';
         ctx.fillText(`${Math.round(v * 100)}%`, 474, y + 2);
         if (on) { ctx.fillStyle = '#ffd98a'; ctx.fillText('◀', 240, y + 2); ctx.fillText('▶', 520, y + 2); }
+      } else if (row.kind === 'toggle') {
+        const v = settings.prefs[row.id];
+        ['켜기', '끄기'].forEach((t, k) => {
+          const sel = (k === 0) === !!v;
+          rect(ctx, sel ? (on ? '#ffd98a' : '#7d8aa0') : '#1a2233', 260 + k * 74, y, 66, 22);
+          ctx.fillStyle = sel ? '#14181f' : '#56657a';
+          ctx.textAlign = 'center';
+          ctx.fillText(t, 293 + k * 74, y + 3);
+          ctx.textAlign = 'left';
+        });
       } else {
-        ctx.font = SMALL_FONT;
         ctx.fillStyle = '#7d8aa0';
         ctx.fillText('Enter — 보기', 260, y + 3);
       }
     });
     ctx.font = SMALL_FONT;
     ctx.fillStyle = '#56657a';
-    ctx.fillText('W/S 고르기 · A/D 음량 · Enter 결정 · Esc 닫기', 60, SCREEN_H - 58);
+    ctx.fillText('W/S 고르기 · A/D 바꾸기 · Enter 결정 · Esc 닫기', 60, SCREEN_H - 58);
     return;
   }
   ctx.font = SMALL_FONT;
   ctx.fillStyle = '#6f86a8';
+  if (settings.view === 'controls') {
+    ctx.fillText('조작법', 60, 80);
+    rect(ctx, '#3b4a63', 112, 88, SCREEN_W - 172, 1);
+    drawControls(ctx);
+    ctx.font = SMALL_FONT;
+    ctx.fillStyle = '#56657a';
+    ctx.fillText('Esc·Enter 돌아가기', 60, SCREEN_H - 58);
+    return;
+  }
   ctx.fillText('판 이력', 60, 80);
   rect(ctx, '#3b4a63', 112, 88, SCREEN_W - 172, 1);
   const rows = 14;

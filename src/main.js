@@ -1,19 +1,22 @@
-import { TILE, DIRS, MOVE_SPEED, RUN_SPEED, STAMINA_DRAIN, STAMINA_REGEN, STAMINA_RECOVER } from './config.js?v=0.23.0';
-import { Chaser } from './chase.js?v=0.23.0';
-import { sfx, bgm, volume, setVolume } from './audio.js?v=0.23.0';
-import { input } from './input.js?v=0.23.0';
-import { state, resetState, readSave, readAllSaves, hasAnySave, latestSlot, applySave, hasItem, curseEnv, helpMult } from './state.js?v=0.23.0';
-import { World } from './world.js?v=0.23.0';
-import { Player, Follower } from './player.js?v=0.23.0';
-import { Dialog } from './dialog.js?v=0.23.0';
-import { Menu } from './menu.js?v=0.23.0';
-import { QUESTS } from './data/quests.js?v=0.23.0';
-import { fader } from './fader.js?v=0.23.0';
-import { createRunner } from './events.js?v=0.23.0';
-import { START, MAPS } from './data/maps.js?v=0.23.0';
-import { ENDINGS } from './data/endings.js?v=0.23.0';
-import { PATCH, VERSION } from './data/patch.js?v=0.23.0';
-import { camera, drawWorld, drawLighting, drawHUD, drawTitle, drawEnding, drawPicture, drawToast, drawChaseBorder, drawGameOver, drawBubbles, drawSettings, GEAR_BUTTON, drawSlots, SLOT_BOX } from './render.js?v=0.23.0';
+import { TILE, DIRS, MOVE_SPEED, RUN_SPEED, STAMINA_DRAIN, STAMINA_REGEN, STAMINA_RECOVER } from './config.js?v=0.26.0';
+import { Chaser } from './chase.js?v=0.26.0';
+import { sfx, bgm, volume, setVolume } from './audio.js?v=0.26.0';
+import { input } from './input.js?v=0.26.0';
+import { state, resetState, readSave, readAllSaves, hasAnySave, latestSlot, applySave, hasItem, curseEnv, helpMult } from './state.js?v=0.26.0';
+import { World } from './world.js?v=0.26.0';
+import { Player, Follower } from './player.js?v=0.26.0';
+import { Dialog } from './dialog.js?v=0.26.0';
+import { Menu } from './menu.js?v=0.26.0';
+import { QUESTS } from './data/quests.js?v=0.26.0';
+import { ITEMS } from './data/items.js?v=0.26.0';
+import { guideTarget } from './guide.js?v=0.26.0';
+import { prefs, setPref } from './prefs.js?v=0.26.0';
+import { fader } from './fader.js?v=0.26.0';
+import { createRunner } from './events.js?v=0.26.0';
+import { START, MAPS } from './data/maps.js?v=0.26.0';
+import { ENDINGS } from './data/endings.js?v=0.26.0';
+import { PATCH, VERSION } from './data/patch.js?v=0.26.0';
+import { camera, drawWorld, drawLighting, drawHUD, drawTitle, drawEnding, drawPicture, drawToast, drawChaseBorder, drawGameOver, drawBubbles, drawSettings, GEAR_BUTTON, drawSlots, SLOT_BOX, drawGuideArrow } from './render.js?v=0.26.0';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -25,7 +28,7 @@ const game = {
   world: new World(),
   player: new Player(),
   dialog: new Dialog(ctx),
-  menu: new Menu(),
+  menu: new Menu({ onUse: (id) => game.useItem(id), onSettings: () => openSettings(() => game.menu.show('settings')) }), // 소지품 「사용」, 설정 탭
   toasts: [],      // 화면 위 알림 { text, t }
   ending: null,
   time: 0,
@@ -187,6 +190,20 @@ const game = {
     this.title.sel = 0;
   },
 
+  // 소지품에서 「사용」: 바라보는 이벤트가 그 아이템을 받으면(useItem) 그것을, 아니면 아이템의 use를 돌린다.
+  // 둘 다 없으면 한 줄. 아이템을 없앨지는 스크립트가 정한다(c.take)
+  useItem(id) {
+    this.menu.hide();
+    const p = this.player, f = p.front();
+    const ev = this.world.eventAt(f.x, f.y);
+    const onEvent = ev?.useItem?.[id];
+    if (onEvent) {
+      if (ev.turnToPlayer) ev.dir = OPPOSITE[p.dir];
+      return runner.run(onEvent);
+    }
+    runner.run(ITEMS[id].use ?? ((c) => c.say('(여기서는 쓸 데가 없다)')));
+  },
+
   showEnding(id) {
     this.scene = 'ending';
     this.ending = ENDINGS[id];
@@ -212,6 +229,7 @@ function updatePlay(dt) {
   if (game.toasts.length && (game.toasts[0].t += dt) > TOAST_TIME) game.toasts.shift();
   updateBubbles();
   if (game.eventMoves.length) updateEventMoves(dt);
+  if (game.settings) return updateSettings(); // 메뉴의 설정 탭에서 연 설정 화면 (시간이 멈춘다)
   if (game.dialog.active) return game.dialog.update(dt, input);
   if (game.menu.open) return game.menu.update(input);
   if (game.autoMove) return updateAutoMove(dt);
@@ -421,19 +439,22 @@ function update(dt) {
   }
 }
 
-// ── 설정 화면 (타이틀 오른쪽 위 톱니바퀴) — 지금은 판 이력(data/patch.js)만 ──
-// 항목: BGM 음량 · 효과음 음량 (A/D로 10%씩) · 판 이력 (Enter로 펼침)
+// ── 설정 화면 (타이틀 오른쪽 위 톱니바퀴, 게임 중에는 메뉴의 「설정」 탭) ──
+// 항목: volume = A/D로 10%씩 · toggle = A/D·Enter로 켜고 끔(prefs.js) · view = Enter로 그 화면을 펼침
 const SETTINGS_ROWS = [
-  { id: 'bgm', label: 'BGM 음량' },
-  { id: 'sfx', label: '효과음 음량' },
-  { id: 'history', label: '판 이력' },
+  { id: 'bgm', label: 'BGM 음량', kind: 'volume' },
+  { id: 'sfx', label: '효과음 음량', kind: 'volume' },
+  { id: 'guide', label: '길 안내 화살표', kind: 'toggle' },
+  { id: 'controls', label: '조작법', kind: 'view' },
+  { id: 'history', label: '판 이력', kind: 'view' },
 ];
-function openSettings() {
+// back — 설정을 닫을 때 돌아갈 곳(게임 중 메뉴의 설정 탭에서 열었으면 메뉴로)
+function openSettings(back = null) {
   const lines = PATCH.flatMap((p) => [
     { head: true, text: `v${p.ver}   ${p.date}` },
     ...p.notes.map((n) => ({ text: `· ${n}` })),
   ]);
-  game.settings = { sel: 0, view: 'main', lines, scroll: 0, volume };
+  game.settings = { sel: 0, view: 'main', rows: SETTINGS_ROWS, lines, scroll: 0, volume, prefs, back };
 }
 function updateSettings() {
   const s = game.settings;
@@ -444,15 +465,25 @@ function updateSettings() {
     if (input.pressed('cancel') || input.pressed('action')) s.view = 'main';
     return;
   }
+  if (s.view !== 'main') { // 조작법 등 보기만 하는 화면: Esc·Enter 돌아가기
+    if (input.pressed('cancel') || input.pressed('action')) s.view = 'main';
+    return;
+  }
   const n = SETTINGS_ROWS.length, row = SETTINGS_ROWS[s.sel];
   if (input.pressed('up')) s.sel = (s.sel + n - 1) % n;
   if (input.pressed('down')) s.sel = (s.sel + 1) % n;
-  if (row.id === 'bgm' || row.id === 'sfx') {
+  if (row.kind === 'volume') {
     const d = (input.pressed('right') ? 0.1 : 0) - (input.pressed('left') ? 0.1 : 0);
     if (d) { setVolume(row.id, volume[row.id] + d); if (row.id === 'sfx') sfx('select'); }
   }
-  if (input.pressed('action') && row.id === 'history') { s.view = 'history'; s.scroll = 0; }
-  else if (input.pressed('cancel')) game.settings = null;
+  if (row.kind === 'toggle' && (input.pressed('left') || input.pressed('right') || input.pressed('action'))) setPref(row.id, !prefs[row.id]);
+  if (input.pressed('action') && row.kind === 'view') { s.view = row.id; s.scroll = 0; }
+  else if (input.pressed('cancel')) closeSettings();
+}
+function closeSettings() {
+  const back = game.settings?.back;
+  game.settings = null;
+  back?.();
 }
 
 // 슬롯 고르기: W/S로 고르고 Enter 결정, Esc 그만두기. 이어하기에서는 빈 슬롯을 건너뛴다
@@ -484,7 +515,7 @@ canvas.addEventListener('click', (e) => {
     return;
   }
   if (game.scene !== 'title') return;
-  if (game.settings) { if (x < 40 || x > canvas.width - 40 || y < 30 || y > canvas.height - 30) game.settings = null; return; } // 창 밖을 누르면 닫기
+  if (game.settings) { if (x < 40 || x > canvas.width - 40 || y < 30 || y > canvas.height - 30) closeSettings(); return; } // 창 밖을 누르면 닫기
   const b = GEAR_BUTTON;
   if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) { game.title.sel = -1; openSettings(); return; }
   const i = Math.floor((y - 286) / 34); // drawTitle의 메뉴 줄: 290 + i * 34
@@ -507,6 +538,19 @@ function lighting(t) {
 
 // 손전등 방향: 바라보는 쪽으로 빠르게 돌아간다(가까운 쪽으로)
 const DIR_ANGLE = { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 };
+// 길 안내 화살표 (guide.js). 목표 찾기는 0.25초마다·맵이 바뀔 때만 다시 한다. 목표가 바로 옆이면 숨긴다
+let guideCache = { at: -1, map: null, target: null };
+function drawGuide(cam, t) {
+  if (t - guideCache.at > 0.25 || guideCache.map !== game.world.id) {
+    guideCache = { at: t, map: game.world.id, target: guideTarget(game.world, game.player) };
+  }
+  const g = guideCache.target, p = game.player;
+  if (!g) return;
+  const dx = g.x - p.px, dy = g.y - p.py;
+  if (Math.abs(dx) + Math.abs(dy) <= 1.5) return;
+  drawGuideArrow(ctx, p.px * TILE - cam.x + TILE / 2, p.py * TILE - cam.y + TILE / 2, Math.atan2(dy, dx), t);
+}
+
 function updateBeam(dt) {
   const target = DIR_ANGLE[game.player.dir] ?? 0;
   let d = target - game.beamAngle;
@@ -549,6 +593,7 @@ function draw() {
     const tint = !state.flags.day && !game.blackout && curseEnv().tint; // 저주 단계·새벽의 화면 색조
     if (tint) { ctx.fillStyle = tint; ctx.fillRect(0, 0, canvas.width, canvas.height); }
     if (!game.picture) drawBubbles(ctx, game.bubbles, cam, t);
+    if (prefs.guide && !game.picture && !game.blackout && !runner.busy) drawGuide(cam, t); // 길 안내 화살표 (설정에서 끔)
     if (game.flash && t < game.flash.until) { // c.flash: 정한 색으로 번쩍였다가 사라진다
       ctx.globalAlpha = (game.flash.until - t) / game.flash.dur;
       ctx.fillStyle = game.flash.color;
@@ -561,6 +606,7 @@ function draw() {
     else if (!game.blackout) drawHUD(ctx, game.world, state, game.warmth, currentObjective(), game.stamina, game.tired);
     if (game.toasts.length) drawToast(ctx, game.toasts[0].text, game.toasts[0].t / TOAST_TIME);
     game.menu.draw(ctx);
+    if (game.settings) drawSettings(ctx, game.settings); // 메뉴의 설정 탭에서 연 설정 화면
     game.dialog.draw(ctx);
   } else if (game.scene === 'ending') {
     drawEnding(ctx, game.ending, t);

@@ -1,12 +1,12 @@
-import { SCREEN_W, SCREEN_H } from './config.js?v=0.23.0';
-import { panel, FONT, SMALL_FONT, drawItemIcon, ICON_SLOT, iconSlot, drawBadge } from './render.js?v=0.23.0';
-import { wrap } from './dialog.js?v=0.23.0';
-import { state, unreadNotes } from './state.js?v=0.23.0';
-import { ITEMS } from './data/items.js?v=0.23.0';
-import { QUESTS } from './data/quests.js?v=0.23.0';
-import { CREATURES } from './data/creatures.js?v=0.23.0';
-import { NOTES } from './data/notes.js?v=0.23.0';
-import { HELPS } from './data/helps.js?v=0.23.0';
+import { SCREEN_W, SCREEN_H } from './config.js?v=0.26.0';
+import { panel, FONT, SMALL_FONT, drawItemIcon, ICON_SLOT, iconSlot, drawBadge } from './render.js?v=0.26.0';
+import { wrap } from './dialog.js?v=0.26.0';
+import { state, unreadNotes } from './state.js?v=0.26.0';
+import { ITEMS } from './data/items.js?v=0.26.0';
+import { QUESTS } from './data/quests.js?v=0.26.0';
+import { CREATURES } from './data/creatures.js?v=0.26.0';
+import { NOTES } from './data/notes.js?v=0.26.0';
+import { HELPS } from './data/helps.js?v=0.26.0';
 
 // 메뉴 (Esc · 소지품은 E). 왼쪽 탭에서 고르고, Enter로 목록에 들어가 항목을 고르면 아래에 설명이 나온다.
 const TABS = [
@@ -14,6 +14,7 @@ const TABS = [
   { id: 'quests', label: '퀘스트', empty: '(받은 퀘스트가 없다)' },
   { id: 'collect', label: '소동물 도감', empty: '(아직 등록된 소동물이 없다)' },
   { id: 'notes', label: '노트', empty: '(아직 적어 둔 것이 없다)' },
+  { id: 'settings', label: '설정' }, // 음량·판 이력 — 타이틀의 설정 화면과 같다
   { id: 'close', label: '닫기' },
 ];
 
@@ -37,7 +38,7 @@ export function groupedItems() {
 //       { section: '제목' } — 고를 수 없는 구역 제목 줄
 function entries(tab) {
   if (tab === 'items') {
-    const items = groupedItems().map(({ id, label }) => ({ label, icon: id, image: ITEMS[id].iconImage, detail: ITEMS[id].desc ?? '', flavor: ITEMS[id].flavor }));
+    const items = groupedItems().map(({ id, label }) => ({ label, use: id, icon: id, image: ITEMS[id].iconImage, detail: ITEMS[id].desc ?? '', flavor: ITEMS[id].flavor }));
     // 채집한 소동물 (Campbell에게 건네기 전) — 물건과 구역을 나눈다
     const carried = Object.keys(state.creatures).filter((id) => state.creatures[id] === 'caught')
       .map((id) => ({ label: CREATURES[id].name, ...creatureIcon(CREATURES[id]), detail: CREATURES[id].desc, flavor: CREATURES[id].flavor }));
@@ -101,16 +102,17 @@ ${cr.desc}`,
 }
 
 export class Menu {
-  constructor() { this.open = false; }
+  // onUse(아이템 id) — 소지품에서 Enter로 「사용」했을 때, onSettings() — 설정 탭에서 Enter (main.js가 넘겨준다)
+  constructor({ onUse = () => {}, onSettings = () => {} } = {}) { this.open = false; this.onUse = onUse; this.onSettings = onSettings; }
 
-  // items = true면 소지품 목록에 바로 들어간다 (E 키)
-  show(items = false) {
+  // start = true면 소지품 목록에 바로 들어간다 (E 키). 탭 id('settings' 등)를 주면 그 탭을 고른 채로 연다
+  show(start = false) {
     this.reading = null;
     this.open = true;
-    this.tab = 0;
+    this.tab = typeof start === 'string' ? Math.max(0, TABS.findIndex((t) => t.id === start)) : 0;
     this.focus = 'tabs';
     this.sel = 0;
-    if (items) {
+    if (start === true) {
       const first = this.list.findIndex((e) => !e.section);
       if (first >= 0) { this.focus = 'list'; this.sel = first; }
     }
@@ -144,6 +146,7 @@ export class Menu {
       if (input.pressed('cancel')) return this.hide();
       if (input.pressed('action')) {
         if (TABS[this.tab].id === 'close') return this.hide();
+        if (TABS[this.tab].id === 'settings') { this.hide(); return this.onSettings(); }
         const first = this.list.findIndex((e) => !e.section);
         if (first >= 0) { this.focus = 'list'; this.sel = first; }
       }
@@ -155,6 +158,7 @@ export class Menu {
     if (input.pressed('up')) step(-1);
     if (input.pressed('down')) step(1);
     if (input.pressed('cancel') || input.pressed('left')) this.focus = 'tabs';
+    else if (input.pressed('action') && this.list[this.sel]?.use) this.onUse(this.list[this.sel].use); // 아이템 「사용」 — 메뉴를 닫고 main.js가 처리
     else if (input.pressed('action') && this.list[this.sel]?.read) {
       const e = this.list[this.sel];
       this.reading = { note: e.read, page: 0 };
@@ -213,9 +217,9 @@ export class Menu {
     ctx.fillText(tab.label + this.header(tab.id), 200, 28);
 
     const list = this.list;
-    if (tab.id === 'close') {
+    if (tab.id === 'close' || tab.id === 'settings') {
       ctx.fillStyle = '#7d8aa0';
-      ctx.fillText('Enter — 메뉴 닫기', LIST.x + 10, LIST.y);
+      ctx.fillText(tab.id === 'close' ? 'Enter — 메뉴 닫기' : 'Enter — 음량·판 이력', LIST.x + 10, LIST.y);
     } else if (!list.length) {
       ctx.fillStyle = '#7d8aa0';
       ctx.fillText(tab.empty, LIST.x + 10, LIST.y);
@@ -254,6 +258,12 @@ export class Menu {
         ctx.font = SMALL_FONT;
         // 아이콘이 있으면 설명 왼쪽에 큰 아이콘 칸, 글은 그 오른쪽
         const e = list[this.sel], pad = e.icon ? iconSlot(2) + 12 : 0, maxW = SCREEN_W - 248 - pad;
+        if (e.use) { // 쓸 수 있는 물건: 내용 칸 오른쪽 위에 안내
+          ctx.fillStyle = '#c9b47a';
+          ctx.textAlign = 'right';
+          ctx.fillText('Enter — 사용', SCREEN_W - 34, 28);
+          ctx.textAlign = 'left';
+        }
         if (e.icon) drawItemIcon(ctx, e.icon, LIST.x + 8, DETAIL_Y - 2, 2, e.image);
         const lines = wrap(ctx, e.detail, maxW).map((t) => ({ t, flavor: false }));
         if (e.flavor) lines.push({ t: '', flavor: true }, ...wrap(ctx, e.flavor, maxW).map((t) => ({ t, flavor: true })));
