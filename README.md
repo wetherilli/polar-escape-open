@@ -4,6 +4,9 @@
 
 ▶ 플레이: https://wetherilli.github.io/polar-escape-open/
 
+인터넷 없이 하려면 [`polar-escape-offline.html`](polar-escape-offline.html)을 내려받아(파일 화면의 「Download raw file」) 더블클릭하면 됩니다.
+파일 하나에 게임이 다 들어 있습니다. 이 파일로 한 진행은 웹판과 따로 저장됩니다.
+
 ## 조작
 
 | 키 | 동작 |

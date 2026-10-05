@@ -1,6 +1,6 @@
-import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.22.0';
-import { ITEMS } from './data/items.js?v=0.22.0';
-import { SOLID_TILES as SOLID } from './world.js?v=0.22.0';
+import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.23.0';
+import { ITEMS } from './data/items.js?v=0.23.0';
+import { SOLID_TILES as SOLID } from './world.js?v=0.23.0';
 
 export const FONT = '18px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
 export const SMALL_FONT = '14px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';

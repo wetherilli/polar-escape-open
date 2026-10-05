@@ -8,8 +8,8 @@
 // 한 장면에서만 초상화를 끄려면 c.say(글, 화자, { face: false }).
 // ─────────────────────────────────────────────
 
-import { NPCS } from './npcs.js?v=0.22.0';
-import { STAFF } from './prologue.js?v=0.22.0';
+import { NPCS } from './npcs.js?v=0.23.0';
+import { STAFF } from './prologue.js?v=0.23.0';
 
 const HAIR = '#2a2420';
 
