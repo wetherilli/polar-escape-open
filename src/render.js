@@ -1,5 +1,6 @@
-import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.21.1';
-import { ITEMS } from './data/items.js?v=0.21.1';
+import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.21.2';
+import { ITEMS } from './data/items.js?v=0.21.2';
+import { SOLID_TILES as SOLID } from './world.js?v=0.21.2';
 
 export const FONT = '18px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
 export const SMALL_FONT = '14px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
@@ -169,11 +170,117 @@ const PIXEL_TILES = {
     rect(g, ['#7d867d', '#262a28'][n], 0, 31, 32, 1);
     rect(g, ['#7d867d', '#262a28'][n], 31, 0, 1, 32);
   },
+  // 책상: 바닥 위에 나뭇결 상판 + 앞면 띠 + 그림자. 위에 종이·모니터·머그컵 중 하나쯤
+  desk(g, n, r) {
+    PIXEL_TILES.floor(g, n, r);
+    rect(g, 'rgba(0,0,0,0.25)', 2, 26, 29, 4); // 그림자
+    rect(g, ['#8a6a4c', '#3a2d22'][n], 1, 5, 30, 18); // 상판
+    for (let k = 0; k < 5; k++) rect(g, ['#7d5f43', '#33281e'][n], 2, 7 + k * 3 + Math.floor(r(k, 0, 1) * 2), 28, 1); // 나뭇결
+    rect(g, ['#a3825f', '#45372a'][n], 1, 5, 30, 1); // 윗 모서리
+    rect(g, ['#5e4632', '#261d16'][n], 1, 23, 30, 4); // 앞면
+    rect(g, ['#4c3828', '#1d1611'][n], 3, 27, 2, 2); rect(g, ['#4c3828', '#1d1611'][n], 27, 27, 2, 2); // 다리
+    const kind = Math.floor(r(0, 0, 9) * 4);
+    if (kind === 0) { // 종이 몇 장
+      rect(g, ['#efece4', '#5c5e63'][n], 6, 8, 10, 12); rect(g, ['#e2ded4', '#505257'][n], 9, 10, 10, 11);
+      for (let k = 0; k < 4; k++) rect(g, ['#b9b4aa', '#3d3f43'][n], 11, 13 + k * 2, 6, 1);
+    } else if (kind === 1) { // 모니터 + 키보드
+      rect(g, ['#2b2f36', '#121418'][n], 9, 6, 14, 10); rect(g, ['#5b7896', '#1d2a38'][n], 10, 7, 12, 8);
+      rect(g, ['#2b2f36', '#121418'][n], 15, 16, 2, 2);
+      rect(g, ['#c9ccd1', '#3c3f45'][n], 8, 19, 16, 3);
+    } else if (kind === 2) { // 머그컵 + 펜
+      rect(g, ['#e8e4dc', '#55575c'][n], 20, 10, 5, 6); rect(g, ['#c94f43', '#4a2622'][n], 20, 10, 5, 1);
+      rect(g, ['#3a6fb0', '#1c3048'][n], 7, 15, 9, 1);
+    }
+  },
+  // 선반: 철제 틀 + 세 칸, 칸마다 바인더·상자
+  shelf(g, n, r) {
+    PIXEL_TILES.floor(g, n, r);
+    const frame = ['#6d7682', '#262b33'][n];
+    rect(g, ['#3d434c', '#15181d'][n], 2, 2, 28, 26); // 안쪽 그늘
+    rect(g, frame, 1, 1, 2, 28); rect(g, frame, 29, 1, 2, 28);
+    const books = [['#c0493d', '#3f6fae', '#e0b23f', '#4f8a50', '#d6d2c8', '#7a5aa0'], ['#45211e', '#1f2f45', '#4a3d1c', '#1f3420', '#4b4a46', '#2e2440']][n];
+    for (let s = 0; s < 3; s++) {
+      const top = 3 + s * 9;
+      rect(g, frame, 1, top + 7, 30, 2); // 선반 판
+      let x = 4;
+      while (x < 27) {
+        if (r(x, s, 2) < 0.2) { // 상자
+          const w = Math.min(8, 27 - x);
+          rect(g, ['#b99c73', '#3e3426'][n], x, top + 2, w, 5); rect(g, ['#a68a62', '#352c20'][n], x, top + 2, w, 1);
+          x += w + 1;
+        } else { // 책·바인더
+          const w = 2 + Math.floor(r(x, s, 3) * 2), h = 4 + Math.floor(r(x, s, 4) * 3);
+          rect(g, pick(books, r(x, s, 5)), x, top + 7 - h, w, h);
+          x += w;
+        }
+        if (r(x, s, 6) < 0.12) x += 3; // 빈 자리
+      }
+    }
+    rect(g, 'rgba(0,0,0,0.25)', 1, 29, 30, 2);
+  },
+  // 설비: 회색 장비 캐비닛 — 위 화면, 손잡이, 아래 환기구(불빛은 TILES.G에서 따로 깜빡인다)
+  equipment(g, n, r) {
+    PIXEL_TILES.floor(g, n, r);
+    rect(g, 'rgba(0,0,0,0.25)', 2, 28, 29, 3);
+    rect(g, ['#7f8a85', '#2a302e'][n], 1, 2, 30, 26);
+    rect(g, ['#98a39e', '#343b38'][n], 1, 2, 30, 2);
+    rect(g, ['#66706b', '#1f2422'][n], 1, 26, 30, 2);
+    rect(g, ['#2a3530', '#0f1412'][n], 5, 6, 14, 8); // 화면
+    rect(g, ['#4c6b5d', '#1a2a23'][n], 6, 7, 12, 3);
+    for (let k = 0; k < 3; k++) rect(g, ['#b8c0bc', '#454c49'][n], 23, 6 + k * 3, 4, 2); // 단추
+    for (let k = 0; k < 4; k++) rect(g, ['#5c6662', '#1c211f'][n], 5, 17 + k * 2, 22, 1); // 환기구
+  },
+  // 세면대: 흰 상판 + 둥근 세면기 + 수도꼭지
+  sink(g, n, r) {
+    PIXEL_TILES.floor(g, n, r);
+    rect(g, 'rgba(0,0,0,0.25)', 2, 26, 29, 4);
+    rect(g, ['#e9ebee', '#555b66'][n], 1, 4, 30, 20);
+    rect(g, ['#c4c9d0', '#40454f'][n], 1, 22, 30, 4);
+    g.fillStyle = ['#b9c3cd', '#3a404b'][n]; g.beginPath(); g.ellipse(16, 15, 10, 6, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = ['#d6dde4', '#474e5a'][n]; g.beginPath(); g.ellipse(16, 16, 8, 4, 0, 0, Math.PI * 2); g.fill();
+    rect(g, ['#8d96a3', '#2c313a'][n], 15, 16, 2, 2); // 배수구
+    rect(g, ['#9aa3ae', '#3a404a'][n], 15, 5, 2, 5); rect(g, ['#9aa3ae', '#3a404a'][n], 13, 5, 6, 2); // 수도꼭지
+    if (r(1, 1, 1) < 0.5) rect(g, ['#7fc1d6', '#2d4a55'][n], 23, 6, 4, 3); // 비누
+  },
+  // 건물 외벽(캠퍼스): 외장 패널 + 유리창 둘. 밤의 불 켜진 창은 TILES.H에서 덧그린다
+  facade(g, n, r) {
+    rect(g, ['#dfe3e8', '#2a2f3a'][n], 0, 0, 32, 32);
+    for (let k = 0; k < 18; k++) rect(g, pick([['#d6dbe1', '#e6e9ed'], ['#262b35', '#2f3440']][n], r(k, 0, 1)), Math.floor(r(k, 1, 2) * 32), Math.floor(r(k, 2, 3) * 32), 2, 1);
+    rect(g, ['#cdd3da', '#242832'][n], 0, 0, 32, 1); // 층 이음매
+    rect(g, ['#c4cad2', '#232732'][n], 0, 30, 32, 2);
+    for (let i = 0; i < 2; i++) {
+      const wx = 5 + i * 14;
+      rect(g, ['#9aa3ae', '#1e222b'][n], wx - 1, 7, 10, 12); // 창틀
+      rect(g, [r(i, 0, 4) < 0.35 ? '#9cc8e8' : '#7fb3dc', '#171b23'][n], wx, 8, 8, 10);
+      rect(g, ['#c6e0f2', '#222733'][n], wx + 1, 9, 2, 4); // 비친 빛
+      rect(g, ['#b0b8c2', '#363c48'][n], wx - 1, 19, 10, 1); // 창턱
+    }
+  },
+  // 부지 경계: 낮은 생울타리 + 철제 울타리
+  hedge(g, n, r) {
+    rect(g, ['#3f7a3a', '#18241b'][n], 0, 0, 32, 32);
+    const leaf = [['#356b31', '#4b8c44', '#5a9c50', '#2e5f2b'], ['#142018', '#1c2c20', '#203325', '#101a13']][n];
+    for (let k = 0; k < 90; k++) rect(g, pick(leaf, r(k, 0, 1)), Math.floor(r(k, 1, 2) * 31), Math.floor(r(k, 2, 3) * 31), 2, 2);
+    const metal = ['#8d96a3', '#55606e'][n], dark = ['#6c7480', '#3b434e'][n];
+    rect(g, metal, 0, 12, 32, 2); rect(g, dark, 0, 14, 32, 1);
+    for (const px of [3, 11, 19, 27]) { rect(g, metal, px, 5, 2, 22); rect(g, dark, px + 2, 5, 1, 22); }
+    rect(g, 'rgba(0,0,0,0.2)', 0, 29, 32, 3);
+  },
+  // 트인 공간: 아래층이 내려다보이는 곳 — 어두운 아래층 바닥 타일(난간은 TILES.V에서 이웃을 보고 긋는다)
+  atrium(g, n, r) {
+    rect(g, ['#6f7680', '#11151c'][n], 0, 0, 32, 32);
+    const tile = [['#767d88', '#6a717b'], ['#151a22', '#0e1218']][n];
+    for (let i = 0; i < 4; i++) rect(g, pick(tile, r(i, 0, 1)), (i % 2) * 16 + 1, (i >> 1) * 16 + 1, 15, 15);
+    for (let k = 0; k < 20; k++) rect(g, ['#5f666f', '#0b0e13'][n], Math.floor(r(k, 1, 2) * 32), Math.floor(r(k, 2, 3) * 32), 1, 1);
+  },
 };
 
 const floor = drawPixelTile('floor');
 const wallTile = drawPixelTile('wall');
 const wall = (ctx, x, y, o = {}) => wallTile(ctx, x, y, { tx: o.tx ?? 0, ty: o.ty ?? 0, state: o.state });
+const facade = drawPixelTile('facade');
+const atrium = drawPixelTile('atrium');
+const equipment = drawPixelTile('equipment');
 
 // 창문 칸: 바깥 풍경(낮 하늘 / 새벽 / 밤 야경) + 창틀과 가운데 창살
 function windowPane(ctx, x, y, o) {
@@ -223,51 +330,38 @@ const TILES = {
   '|': drawPixelTile('parking'),  // 주차장 (주차선)
   P: drawPixelTile('pilotis'),    // 필로티 (건물 1층을 차가 지나감)
   H(ctx, x, y, o) { // 건물 외벽 — 낮: 밝은 외장 + 하늘이 비친 유리 / 밤: 창 몇 개만 불이 켜져 있다
-    if (day(o)) {
-      rect(ctx, '#dfe3e8', x, y, T, T);
-      rect(ctx, '#c4cad2', x, y + 30, T, 2);
-      for (let i = 0; i < 2; i++) rect(ctx, (o.tx + o.ty + i) % 3 ? '#7fb3dc' : '#9cc8e8', x + 5 + i * 14, y + 8, 8, 10);
-      return;
-    }
-    rect(ctx, '#2a2f3a', x, y, T, T);
-    rect(ctx, '#232732', x, y + 30, T, 2);
-    for (let i = 0; i < 2; i++) {
-      const lit = (o.tx * 13 + o.ty * 7 + i * 5) % 11 === 0;
-      rect(ctx, lit ? '#e8c46a' : '#171b23', x + 5 + i * 14, y + 8, 8, 10);
-    }
-  },
-  F(ctx, x, y, o) { // 부지 경계 (화단·울타리)
+    facade(ctx, x, y, o);
     const d = day(o);
-    rect(ctx, d ? '#3f7a3a' : '#18241b', x, y, T, T);
-    rect(ctx, d ? '#8d96a3' : '#55606e', x, y + 13, T, 3);
-    rect(ctx, d ? '#8d96a3' : '#55606e', x + 4, y + 6, 3, 20);
-    rect(ctx, d ? '#8d96a3' : '#55606e', x + 24, y + 6, 3, 20);
+    if (!d) for (let i = 0; i < 2; i++) {
+      if ((o.tx * 13 + o.ty * 7 + i * 5) % 11 === 0) rect(ctx, '#e8c46a', x + 5 + i * 14, y + 8, 8, 10);
+    }
+    // 건물 가장자리(옆 칸이 H가 아닌 쪽)에 진한 테두리 — 건물끼리, 건물과 길이 갈라져 보이게
+    const out = (dx, dy) => o.world && o.world.tiles[o.ty + dy]?.[o.tx + dx] !== 'H';
+    const edge = d ? '#a7afba' : '#151820';
+    if (out(0, -1)) rect(ctx, edge, x, y, T, 2);
+    if (out(0, 1)) rect(ctx, edge, x, y + T - 2, T, 2);
+    if (out(-1, 0)) rect(ctx, edge, x, y, 2, T);
+    if (out(1, 0)) rect(ctx, edge, x + T - 2, y, 2, T);
   },
+  F: drawPixelTile('hedge'), // 부지 경계 (생울타리·울타리)
   W(ctx, x, y, o) { windowPane(ctx, x, y, o); windowFrame(ctx, x, y, day(o)); },
-  V(ctx, x, y, o) { // 아래층이 내다보이는 트인 공간: 어두운 아래층 바닥 + 복도 쪽 난간
-    rect(ctx, day(o) ? '#7d848f' : '#141820', x, y, T, T);
-    rect(ctx, day(o) ? '#8b929d' : '#1a1f29', x + (o.ty % 2 ? 4 : 18), y + 6, 10, 10);
-    rect(ctx, '#a9b2bf', x, y, 3, T);
-    rect(ctx, '#c4ccd6', x, y + 2, 3, 2);
+  V(ctx, x, y, o) { // 아래층이 내다보이는 트인 공간: 어두운 아래층 바닥 + 걸을 수 있는 칸과 맞닿은 쪽에 유리 난간
+    atrium(ctx, x, y, o);
+    const walk = (dx, dy) => { const ch = o.world?.tiles[o.ty + dy]?.[o.tx + dx]; return ch != null && ch !== 'V' && !SOLID.has(ch); };
+    const glass = 'rgba(170, 205, 230, 0.35)', rail = day(o) ? '#c4ccd6' : '#7d8796';
+    if (!o.world) { rect(ctx, glass, x, y, 4, T); rect(ctx, rail, x, y, 2, T); return; } // 편집기 견본
+    if (walk(-1, 0)) { rect(ctx, glass, x, y, 4, T); rect(ctx, rail, x, y, 2, T); }
+    if (walk(1, 0)) { rect(ctx, glass, x + T - 4, y, 4, T); rect(ctx, rail, x + T - 2, y, 2, T); }
+    if (walk(0, -1)) { rect(ctx, glass, x, y, T, 4); rect(ctx, rail, x, y, T, 2); }
+    if (walk(0, 1)) { rect(ctx, glass, x, y + T - 4, T, 4); rect(ctx, rail, x, y + T - 2, T, 2); }
   },
-  '='(ctx, x, y, o) {
-    floor(ctx, x, y, o);
-    rect(ctx, '#5a4634', x + 1, y + 6, T - 2, T - 10);
-    rect(ctx, '#6e5640', x + 1, y + 6, T - 2, 4);
-  },
-  R(ctx, x, y, o) {
-    floor(ctx, x, y, o);
-    rect(ctx, '#7c8796', x + 1, y + 3, T - 2, T - 6);
-    rect(ctx, '#a9c4e0', x + 3, y + 6, T - 6, 7);
-    rect(ctx, '#a9c4e0', x + 3, y + 17, T - 6, 7);
-  },
-  G(ctx, x, y, o) {
-    floor(ctx, x, y, o);
-    rect(ctx, '#3b4a3d', x, y + 2, T, T - 4);
-    rect(ctx, '#2c382e', x, y + 10, T, 3);
-    rect(ctx, '#2c382e', x, y + 18, T, 3);
-    const on = o.state.flags.power && Math.floor(o.t * 4 + o.tx) % 2 === 0;
-    rect(ctx, on ? '#7dff9a' : '#55302f', x + 12, y + 24, 6, 4);
+  '=': drawPixelTile('desk'),      // 책상
+  R: drawPixelTile('shelf'),       // 선반
+  S: drawPixelTile('sink'),        // 세면대
+  G(ctx, x, y, o) {                // 설비 — 전기가 들어와 있으면 초록 불이 깜빡인다
+    equipment(ctx, x, y, o);
+    const on = o.state?.flags.power && Math.floor(o.t * 4 + o.tx) % 2 === 0;
+    rect(ctx, on ? '#7dff9a' : '#55302f', x + 23, y + 16, 4, 3);
   },
 };
 
@@ -497,7 +591,7 @@ export function drawWorld(ctx, world, player, state, cam, t, follower = null, ch
     for (let tx = x0; tx <= x0 + SCREEN_W / T + 1; tx++) {
       if (tx < 0 || ty < 0 || tx >= world.w || ty >= world.h) continue;
       const draw = TILES[world.tiles[ty][tx]] ?? wall;
-      draw(ctx, tx * T - cam.x, ty * T - cam.y, { tx, ty, t, state });
+      draw(ctx, tx * T - cam.x, ty * T - cam.y, { tx, ty, t, state, world });
     }
   }
   for (const ev of world.visibleEvents()) {
