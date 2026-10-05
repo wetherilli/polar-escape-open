@@ -34,20 +34,21 @@
 //  chatter  ['…'] 또는 { lines, every(초), range(칸) } — 플레이어가 가까이 있으면 가끔 머리 위 말풍선으로 혼잣말
 //  hiddenTag  '표시' — 그 표시를 드러내는 도움(helps.js reveal)을 받아야 보이는 숨은 요소
 //  glow     true면 밤에 그 칸 둘레로 따뜻한 불빛이 새어 나온다. lit 맵으로 이어지는 문(door·roomDoor 등)은 저절로 켜진다
+//  passable (state) => bool — false면 지금은 지나갈 수 없는 문(낮에 잠긴 건물 등). 길 안내 화살표가 이 문으로 이끌지 않는다
 //  그 밖의 필드(color, lockFlag 등)는 스프라이트에서 o.ev로 읽는다.
 //
 // 문 방향 관례: 문이 왼쪽 벽이면 'right', 오른쪽 벽이면 'left', 위 벽이면 'down', 아래 벽이면 'up'
 //              (도착 칸 = 앵커 칸에서 그 방향으로 한 칸)
 // ─────────────────────────────────────────────
 
-import { PROLOGUE, PROLOGUE_START, STAFF } from './prologue.js?v=0.26.0';
-import { NPCS, EXAMPLE_ITEM } from './npcs.js?v=0.26.0';
-import { CH1 } from './chapter1.js?v=0.26.0';
-import { CREATURES } from './creatures.js?v=0.26.0';
-import { ITEMS } from './items.js?v=0.26.0';
-import { josa } from '../text.js?v=0.26.0';
-import { pickEnding } from './endings.js?v=0.26.0';
-import { helpTags } from '../state.js?v=0.26.0';
+import { PROLOGUE, PROLOGUE_START, STAFF } from './prologue.js?v=0.29.0';
+import { NPCS, EXAMPLE_ITEM } from './npcs.js?v=0.29.0';
+import { CH1 } from './chapter1.js?v=0.29.0';
+import { CREATURES } from './creatures.js?v=0.29.0';
+import { ITEMS } from './items.js?v=0.29.0';
+import { josa } from '../text.js?v=0.29.0';
+import { pickEnding } from './endings.js?v=0.29.0';
+import { helpTags } from '../state.js?v=0.29.0';
 
 export const START = PROLOGUE_START;
 
@@ -75,6 +76,7 @@ const npc = (name, color, run) => ({
 // 낮(오프닝)에는 볼일이 없는 건물 — 밤이 되면 열린다
 const dayLocked = (d) => ({
   ...d,
+  passable: (s) => !s.flags.day, // 길 안내(guide.js)가 지금 지나갈 수 있는 문인지 본다
   run: (c) => (c.flag('day') ? c.say('(지금은 볼일이 없다 — 대사 미정)') : d.run(c)),
 });
 // 건물 출입구 (캠퍼스 ↔ 건물). 낮이든 밤이든, 들어갈 때도 나갈 때도 방문증이 있어야 지날 수 있다(작가 지침).
@@ -88,6 +90,7 @@ const entrance = (sprite, map, anchor, dir) => ({
 // 연구지원동 북서동 출입문: 낮(오프닝)에는 북극곰 장면(pro 3) 뒤에 열린다
 const supADoor = (anchor, dir) => ({
   ...entrance('glassDoor', 'supA_1f', anchor, dir),
+  passable: (s) => !(s.flags.day && s.flags.pro < 3),
   run: (c) => (c.flag('day') && c.flag('pro') < 3
     ? c.say('(지금은 볼일이 없다 — 대사 미정)')
     : entrance('glassDoor', 'supA_1f', anchor, dir).run(c)),

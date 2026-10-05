@@ -1,12 +1,12 @@
-import { SCREEN_W, SCREEN_H } from './config.js?v=0.26.0';
-import { panel, FONT, SMALL_FONT, drawItemIcon, ICON_SLOT, iconSlot, drawBadge } from './render.js?v=0.26.0';
-import { wrap } from './dialog.js?v=0.26.0';
-import { state, unreadNotes } from './state.js?v=0.26.0';
-import { ITEMS } from './data/items.js?v=0.26.0';
-import { QUESTS } from './data/quests.js?v=0.26.0';
-import { CREATURES } from './data/creatures.js?v=0.26.0';
-import { NOTES } from './data/notes.js?v=0.26.0';
-import { HELPS } from './data/helps.js?v=0.26.0';
+import { SCREEN_W, SCREEN_H } from './config.js?v=0.29.0';
+import { panel, FONT, SMALL_FONT, drawItemIcon, ICON_SLOT, iconSlot, drawBadge, drawMinimap } from './render.js?v=0.29.0';
+import { wrap } from './dialog.js?v=0.29.0';
+import { state, unreadNotes } from './state.js?v=0.29.0';
+import { ITEMS } from './data/items.js?v=0.29.0';
+import { QUESTS } from './data/quests.js?v=0.29.0';
+import { CREATURES } from './data/creatures.js?v=0.29.0';
+import { NOTES } from './data/notes.js?v=0.29.0';
+import { HELPS } from './data/helps.js?v=0.29.0';
 
 // 메뉴 (Esc · 소지품은 E). 왼쪽 탭에서 고르고, Enter로 목록에 들어가 항목을 고르면 아래에 설명이 나온다.
 const TABS = [
@@ -14,6 +14,7 @@ const TABS = [
   { id: 'quests', label: '퀘스트', empty: '(받은 퀘스트가 없다)' },
   { id: 'collect', label: '소동물 도감', empty: '(아직 등록된 소동물이 없다)' },
   { id: 'notes', label: '노트', empty: '(아직 적어 둔 것이 없다)' },
+  { id: 'map', label: '지도' }, // 지금 있는 맵 한 장 — 내 위치·문·계단·길 안내 목적지
   { id: 'settings', label: '설정' }, // 음량·판 이력 — 타이틀의 설정 화면과 같다
   { id: 'close', label: '닫기' },
 ];
@@ -102,8 +103,11 @@ ${cr.desc}`,
 }
 
 export class Menu {
-  // onUse(아이템 id) — 소지품에서 Enter로 「사용」했을 때, onSettings() — 설정 탭에서 Enter (main.js가 넘겨준다)
-  constructor({ onUse = () => {}, onSettings = () => {} } = {}) { this.open = false; this.onUse = onUse; this.onSettings = onSettings; }
+  // onUse(아이템 id) — 소지품에서 Enter로 「사용」했을 때, onSettings() — 설정 탭에서 Enter,
+  // mapView() — 지도 탭에 그릴 { world, player, target } (main.js가 넘겨준다)
+  constructor({ onUse = () => {}, onSettings = () => {}, mapView = () => null } = {}) {
+    this.open = false; this.onUse = onUse; this.onSettings = onSettings; this.mapView = mapView;
+  }
 
   // start = true면 소지품 목록에 바로 들어간다 (E 키). 탭 id('settings' 등)를 주면 그 탭을 고른 채로 연다
   show(start = false) {
@@ -123,6 +127,7 @@ export class Menu {
   get list() { return entries(TABS[this.tab].id); }
 
   header(tab) {
+    if (tab === 'map') return this.mapView() ? `  —  ${this.mapView().world.def.name}` : '';
     if (tab !== 'collect') return '';
     const total = Object.keys(CREATURES).length;
     const found = Object.keys(state.creatures).length;
@@ -217,7 +222,10 @@ export class Menu {
     ctx.fillText(tab.label + this.header(tab.id), 200, 28);
 
     const list = this.list;
-    if (tab.id === 'close' || tab.id === 'settings') {
+    if (tab.id === 'map') {
+      const v = this.mapView();
+      if (v) drawMinimap(ctx, v.world, v.player, v.target, LIST.x, 48, SCREEN_W - 228, SCREEN_H - 120, performance.now() / 1000);
+    } else if (tab.id === 'close' || tab.id === 'settings') {
       ctx.fillStyle = '#7d8aa0';
       ctx.fillText(tab.id === 'close' ? 'Enter — 메뉴 닫기' : 'Enter — 음량·판 이력', LIST.x + 10, LIST.y);
     } else if (!list.length) {

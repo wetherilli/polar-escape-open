@@ -1,15 +1,15 @@
-import { state, hasItem, saveGame, readSave, curseLevel } from './state.js?v=0.26.0';
-import { CURSE } from './data/curse.js?v=0.26.0';
-import { NOTES } from './data/notes.js?v=0.26.0';
-import { HELPS } from './data/helps.js?v=0.26.0';
-import { MAPS } from './data/maps.js?v=0.26.0';
-import { ITEMS } from './data/items.js?v=0.26.0';
-import { QUESTS } from './data/quests.js?v=0.26.0';
-import { CREATURES } from './data/creatures.js?v=0.26.0';
-import { fader } from './fader.js?v=0.26.0';
-import { sfx } from './audio.js?v=0.26.0';
+import { state, hasItem, saveGame, readSave, curseLevel } from './state.js?v=0.29.0';
+import { CURSE } from './data/curse.js?v=0.29.0';
+import { NOTES } from './data/notes.js?v=0.29.0';
+import { HELPS } from './data/helps.js?v=0.29.0';
+import { MAPS } from './data/maps.js?v=0.29.0';
+import { ITEMS } from './data/items.js?v=0.29.0';
+import { QUESTS } from './data/quests.js?v=0.29.0';
+import { CREATURES } from './data/creatures.js?v=0.29.0';
+import { fader } from './fader.js?v=0.29.0';
+import { sfx } from './audio.js?v=0.29.0';
 
-import { josa } from './text.js?v=0.26.0';
+import { josa } from './text.js?v=0.29.0';
 
 const subtitle = (opts) => (opts.sub && hasItem('translator') ? opts.sub : null);
 
@@ -21,8 +21,8 @@ export function createRunner(game) {
     // opts.sub = 한국어 자막. 번역기(translator)를 가지고 있을 때만 보인다.
     // 번역기는 자막만 켜 준다 — 진행 조건으로 쓰지 않는다(영어를 읽는 플레이어는 없이도 끝까지 간다).
     sfx: (name) => sfx(name), // 효과음 한 번 (audio.js의 SFX 이름)
-    say: (text, speaker, opts = {}) => game.dialog.open(text, { speaker, sub: subtitle(opts), face: opts.face }),
-    choose: (text, choices, opts = {}) => game.dialog.open(text, { choices, speaker: opts.speaker, sub: subtitle(opts), face: opts.face }),
+    say: (text, speaker, opts = {}) => game.dialog.open(text, { speaker, sub: subtitle(opts), face: opts.face, mood: opts.mood }),
+    choose: (text, choices, opts = {}) => game.dialog.open(text, { choices, speaker: opts.speaker, sub: subtitle(opts), face: opts.face, mood: opts.mood }),
 
     has: (id) => hasItem(id),
     async give(id, count = 1) {

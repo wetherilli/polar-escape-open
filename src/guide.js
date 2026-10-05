@@ -1,16 +1,20 @@
 // 길 안내 — 진행 중인 퀘스트의 지금 단계가 가리키는 곳(quests.js goals)으로 가는 다음 지점을 찾는다.
-// 진행 중인 메인 퀘스트(최근 것)가 먼저, 없으면 사이드 퀘스트(최근 것). 화살표는 render.js drawGuideArrow.
+// 오프닝(낮)에는 prologue.js의 PROLOGUE_GOALS, 그 뒤로는 진행 중인 메인 퀘스트(최근 것) → 사이드 퀘스트(최근 것).
+// 화살표는 render.js drawGuideArrow.
 //
 // 목표가 다른 맵이면: 맵 사이를 잇는 문(to)·계단·엘리베이터(floors)로 길을 찾아, 지금 맵에서 그 길로 나가는
 // 가장 가까운 문·계단을 가리킨다. 지금은 지나갈 수 없는 것(잠긴 엘리베이터, 무너진 계단, 방문증 없는 출입구,
 // 도움을 받기 전의 도움 문, 보이지 않는 이벤트)은 길로 치지 않는다.
 
-import { MAPS } from './data/maps.js?v=0.26.0';
-import { QUESTS } from './data/quests.js?v=0.26.0';
-import { state, hasItem, helpTags } from './state.js?v=0.26.0';
+import { MAPS } from './data/maps.js?v=0.29.0';
+import { QUESTS } from './data/quests.js?v=0.29.0';
+import { PROLOGUE_GOALS } from './data/prologue.js?v=0.29.0';
+import { state, hasItem, helpTags } from './state.js?v=0.29.0';
 
-// 길 안내를 받을 퀘스트와 그 단계의 목표 (없으면 null)
+// 길 안내 목표 (없으면 null). 오프닝(낮, flags.pro 0~4) 동안은 PROLOGUE_GOALS, 그 뒤로는 퀘스트
 export function guideGoal() {
+  const pro = state.flags.pro;
+  if (typeof pro === 'number' && PROLOGUE_GOALS[pro]) return PROLOGUE_GOALS[pro];
   const isMain = (id) => QUESTS[id].type === 'main';
   const active = Object.entries(state.quests).filter(([id, q]) => !q.done && QUESTS[id])
     .sort((a, b) => isMain(b[0]) - isMain(a[0]) || b[1].order - a[1].order);
@@ -26,6 +30,7 @@ function exits(mapId, viaCut) {
   const out = [];
   for (const [key, ev] of Object.entries(MAPS[mapId]?.events ?? {})) {
     if (ev.visible && !ev.visible(state)) continue;
+    if (ev.passable && !ev.passable(state)) continue; // 낮에 잠긴 건물 등
     if (ev.to?.map) {
       if (ev.entrance && !hasItem('visitorPass')) continue;
       if (ev.helpTag && !helpTags('open').includes(ev.helpTag)) continue;

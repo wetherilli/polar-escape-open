@@ -1,22 +1,23 @@
-import { TILE, DIRS, MOVE_SPEED, RUN_SPEED, STAMINA_DRAIN, STAMINA_REGEN, STAMINA_RECOVER } from './config.js?v=0.26.0';
-import { Chaser } from './chase.js?v=0.26.0';
-import { sfx, bgm, volume, setVolume } from './audio.js?v=0.26.0';
-import { input } from './input.js?v=0.26.0';
-import { state, resetState, readSave, readAllSaves, hasAnySave, latestSlot, applySave, hasItem, curseEnv, helpMult } from './state.js?v=0.26.0';
-import { World } from './world.js?v=0.26.0';
-import { Player, Follower } from './player.js?v=0.26.0';
-import { Dialog } from './dialog.js?v=0.26.0';
-import { Menu } from './menu.js?v=0.26.0';
-import { QUESTS } from './data/quests.js?v=0.26.0';
-import { ITEMS } from './data/items.js?v=0.26.0';
-import { guideTarget } from './guide.js?v=0.26.0';
-import { prefs, setPref } from './prefs.js?v=0.26.0';
-import { fader } from './fader.js?v=0.26.0';
-import { createRunner } from './events.js?v=0.26.0';
-import { START, MAPS } from './data/maps.js?v=0.26.0';
-import { ENDINGS } from './data/endings.js?v=0.26.0';
-import { PATCH, VERSION } from './data/patch.js?v=0.26.0';
-import { camera, drawWorld, drawLighting, drawHUD, drawTitle, drawEnding, drawPicture, drawToast, drawChaseBorder, drawGameOver, drawBubbles, drawSettings, GEAR_BUTTON, drawSlots, SLOT_BOX, drawGuideArrow } from './render.js?v=0.26.0';
+import { TILE, DIRS, MOVE_SPEED, RUN_SPEED, STAMINA_DRAIN, STAMINA_REGEN, STAMINA_RECOVER } from './config.js?v=0.29.0';
+import { Chaser } from './chase.js?v=0.29.0';
+import { sfx, bgm, volume, setVolume } from './audio.js?v=0.29.0';
+import { input } from './input.js?v=0.29.0';
+import { state, resetState, readSave, readAllSaves, hasAnySave, latestSlot, applySave, hasItem, curseEnv, helpMult, revealAround } from './state.js?v=0.29.0';
+import { World } from './world.js?v=0.29.0';
+import { Player, Follower } from './player.js?v=0.29.0';
+import { Dialog } from './dialog.js?v=0.29.0';
+import { Menu } from './menu.js?v=0.29.0';
+import { QUESTS } from './data/quests.js?v=0.29.0';
+import { ITEMS } from './data/items.js?v=0.29.0';
+import { guideTarget } from './guide.js?v=0.29.0';
+import { prefs, setPref } from './prefs.js?v=0.29.0';
+import { setupTouch, syncTouch } from './touch.js?v=0.29.0';
+import { fader } from './fader.js?v=0.29.0';
+import { createRunner } from './events.js?v=0.29.0';
+import { START, MAPS } from './data/maps.js?v=0.29.0';
+import { ENDINGS } from './data/endings.js?v=0.29.0';
+import { PATCH, VERSION } from './data/patch.js?v=0.29.0';
+import { camera, drawWorld, drawLighting, drawHUD, drawTitle, drawEnding, drawPicture, drawToast, drawChaseBorder, drawGameOver, drawBubbles, drawSettings, GEAR_BUTTON, drawSlots, SLOT_BOX, drawGuideArrow } from './render.js?v=0.29.0';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -28,7 +29,11 @@ const game = {
   world: new World(),
   player: new Player(),
   dialog: new Dialog(ctx),
-  menu: new Menu({ onUse: (id) => game.useItem(id), onSettings: () => openSettings(() => game.menu.show('settings')) }), // 소지품 「사용」, 설정 탭
+  menu: new Menu({ // 소지품 「사용」, 설정 탭, 지도 탭
+    onUse: (id) => game.useItem(id),
+    onSettings: () => openSettings(() => game.menu.show('settings')),
+    mapView: () => ({ world: game.world, player: game.player, target: guideTarget(game.world, game.player) }),
+  }),
   toasts: [],      // 화면 위 알림 { text, t }
   ending: null,
   time: 0,
@@ -157,6 +162,7 @@ const game = {
   begin({ map, x, y, dir }) {
     this.world.load(map);
     this.player.place(x, y, dir);
+    lastExplored = ''; // 새 게임·불러오기 뒤 바로 둘레를 드러낸다
     this.scene = 'play';
     this.warmth = 1;
     this.stamina = 1;
@@ -225,7 +231,17 @@ const hooks = {
   onStep(x, y) { game.follower?.stepTo(x, y); stepSound(); },
 };
 
+// 지도: 플레이어가 새 칸에 서면 둘레를 「가 본 곳」으로 (state.js revealAround)
+let lastExplored = '';
+function exploreHere() {
+  const w = game.world, p = game.player, key = `${w.id}/${p.x}/${p.y}`;
+  if (key === lastExplored) return;
+  lastExplored = key;
+  revealAround(w.id, w.w, w.h, p.x, p.y);
+}
+
 function updatePlay(dt) {
+  exploreHere();
   if (game.toasts.length && (game.toasts[0].t += dt) > TOAST_TIME) game.toasts.shift();
   updateBubbles();
   if (game.eventMoves.length) updateEventMoves(dt);
@@ -414,6 +430,7 @@ function stepSound() {
 
 function update(dt) {
   fader.update(dt);
+  syncTouch(); // 설정의 「화면 버튼」에 맞춰 보이기·숨기기
   uiSounds();
   bgm(wantedBgm()); // 장면에 맞는 BGM (같으면 그대로)
   if (game.slots) return updateSlots(); // 저장·이어하기 슬롯 고르기가 열려 있으면 그것만
@@ -445,6 +462,7 @@ const SETTINGS_ROWS = [
   { id: 'bgm', label: 'BGM 음량', kind: 'volume' },
   { id: 'sfx', label: '효과음 음량', kind: 'volume' },
   { id: 'guide', label: '길 안내 화살표', kind: 'toggle' },
+  { id: 'touch', label: '화면 버튼', kind: 'toggle' }, // 휴대폰용 방향 패드·버튼 (touch.js)
   { id: 'controls', label: '조작법', kind: 'view' },
   { id: 'history', label: '판 이력', kind: 'view' },
 ];
@@ -561,6 +579,7 @@ function updateBeam(dt) {
 function draw() {
   const t = game.time;
   if (game.scene === 'title') {
+    game.title.touch = !!prefs.touch; // 화면 버튼을 쓰면 아래 조작 안내를 바꾼다
     drawTitle(ctx, t, game.title);
     if (game.settings) drawSettings(ctx, game.settings);
   } else if (game.scene === 'play') {
@@ -617,6 +636,7 @@ function draw() {
   fader.draw(ctx);
 }
 
+setupTouch(); // 휴대폰·태블릿 화면 버튼
 game.openTitle();
 let last = performance.now();
 function frame(now) {

@@ -10,7 +10,7 @@
 //   c.say(글, 화자) — 화자를 주면 이름표가 붙는다. 여러 줄은 c.say를 여러 번.
 // ─────────────────────────────────────────────
 
-import { CH1 } from './chapter1.js?v=0.26.0';
+import { CH1 } from './chapter1.js?v=0.29.0';
 
 export const STAFF ={ name: '홍보실 직원', color: '#c0577a' };
 
@@ -19,6 +19,15 @@ export const PROLOGUE_START = {
   map: 'campus', x: 71, y: 21, dir: 'left', // 정문 안쪽 차도
   flags: { day: true, pro: 0, objective: '경비실에서 방문증 받기' },
 };
+
+// 오프닝 길 안내 — flags.pro 단계마다 가야 할 곳(quests.js goals와 같은 꼴). 화살표는 guide.js가 그린다
+export const PROLOGUE_GOALS = [
+  { map: 'campus', event: 'v' },   // 0 경비실에서 방문증 받기
+  { map: 'main_1f' },              // 1 본관 1층으로 (들어서면 홍보실 직원이 맞이함)
+  { map: 'exhibit', event: 'u' },  // 2 홍보관 북극곰
+  { map: 'supA_1f', event: 'k' },  // 3 연구지원동 카페 카운터
+  { map: 'supA_wc' },              // 4 화장실
+];
 
 export const PROLOGUE = {
   // 캠퍼스에 처음 들어왔을 때 — 낮의 극지연구소 전경

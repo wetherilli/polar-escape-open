@@ -1,7 +1,8 @@
-import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.26.0';
-import { ITEMS } from './data/items.js?v=0.26.0';
-import { lookFor } from './data/looks.js?v=0.26.0';
-import { SOLID_TILES as SOLID } from './world.js?v=0.26.0';
+import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.29.0';
+import { ITEMS } from './data/items.js?v=0.29.0';
+import { lookFor } from './data/looks.js?v=0.29.0';
+import { SOLID_TILES as SOLID } from './world.js?v=0.29.0';
+import { isExplored } from './state.js?v=0.29.0';
 
 export const FONT = '18px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
 export const SMALL_FONT = '14px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
@@ -836,15 +837,35 @@ const PORTRAIT_HAIR = {
 const PORTRAIT_GLASSES = ['', '', '', '', '', '', '', '......gggg....gggg......', '......g..gggggg..g......',
   '......g..g....g..g......', '......gggg....gggg......'];
 const portraitCache = new Map();
-function portraitCanvas(L) {
-  const key = JSON.stringify(L);
+// 표정(data/portraits.js MOODS): 바꿀 칸 [x, y, 글자]. face는 왼쪽 눈 쪽만 적고 오른쪽은 거울로(x → 23 - x), extra는 그대로.
+// 바탕 눈은 (7~8, 8~9)·(15~16, 8~9), 입은 (11~12, 13). 글자: e 눈 · s 살(지우기) · k 눈썹 · m 입 · M 벌린 입 · T 눈물·땀
+const PORTRAIT_MOODS = {
+  '기쁨': { face: [[7, 9, 's'], [8, 9, 's'], [6, 9, 'e'], [9, 9, 'e']], // 웃는 눈(∩)
+    extra: [[11, 13, 's'], [12, 13, 's'], [10, 13, 'm'], [13, 13, 'm'], [11, 14, 'm'], [12, 14, 'm']] }, // 웃는 입
+  '놀람': { face: [[7, 7, 'e'], [8, 7, 'e'], [7, 5, 'k'], [8, 5, 'k']], // 커진 눈, 올라간 눈썹
+    extra: [[11, 13, 'M'], [12, 13, 'M'], [11, 14, 'M'], [12, 14, 'M']] }, // 벌린 입
+  '슬픔': { face: [[6, 7, 'k'], [7, 7, 'k'], [8, 6, 'k'], [7, 10, 'T']], // 안쪽이 올라간 눈썹, 눈물
+    extra: [[10, 14, 'm'], [13, 14, 'm']] }, // 처진 입
+  '화남': { face: [[6, 6, 'k'], [7, 7, 'k'], [8, 7, 'k']], // 안쪽이 내려간 눈썹
+    extra: [[10, 13, 'm'], [13, 13, 'm']] }, // 다문 입
+  '걱정': { face: [[6, 7, 'k'], [7, 7, 'k'], [8, 6, 'k']],
+    extra: [[11, 13, 's'], [12, 13, 's'], [10, 13, 'm'], [11, 14, 'm'], [12, 13, 'm'], [13, 14, 'm'], [18, 6, 'T'], [18, 7, 'T']] }, // 삐뚤어진 입, 땀
+};
+function portraitCanvas(L, mood = '보통') {
+  const key = `${mood}/${JSON.stringify(L)}`;
   let c = portraitCache.get(key);
   if (c) return c;
   const rows = PORTRAIT_ROWS.map((r) => [...r]);
   const over = (lines) => lines.forEach((r, y) => [...r].forEach((ch, x) => { if (ch !== '.') rows[y][x] = ch; }));
   over(PORTRAIT_HAIR[L.hair] ?? PORTRAIT_HAIR.short);
   if (L.glasses) over(PORTRAIT_GLASSES);
-  const pal = { ...personPalette(L), n: shade(L.skin, 0.88), m: '#b86a5c', g: '#a7b0bd' }; // 안경테는 밝게 — 어두우면 눈과 붙어 선글라스처럼 보인다
+  const m = PORTRAIT_MOODS[mood];
+  if (m) {
+    for (const [x, y, ch] of m.face) { rows[y][x] = ch; rows[y][23 - x] = ch; }
+    for (const [x, y, ch] of m.extra) rows[y][x] = ch;
+  }
+  const pal = { ...personPalette(L), n: shade(L.skin, 0.88), m: '#b86a5c', g: '#a7b0bd', // 안경테는 밝게 — 어두우면 눈과 붙어 선글라스처럼 보인다
+    k: shade(L.hairColor, 0.7), M: '#5a2a2a', T: '#8fd0f0' };
   c = document.createElement('canvas');
   c.width = c.height = PORTRAIT_SIZE;
   const g = c.getContext('2d');
@@ -852,16 +873,71 @@ function portraitCanvas(L) {
   portraitCache.set(key, c);
   return c;
 }
-// p = { look, image } — look은 lookFor로 만든 겉모습(data/portraits.js가 넣어 준다)
-export function drawPortrait(ctx, p, x, y) {
+// p = { look, image, moods } — look은 lookFor로 만든 겉모습(data/portraits.js가 넣어 준다). mood = 표정(MOODS)
+export function drawPortrait(ctx, p, x, y, mood = '보통') {
   ctx.fillStyle = '#16213a';
   ctx.fillRect(x, y, PORTRAIT_SIZE, PORTRAIT_SIZE);
-  const img = p.image ? iconImage(p.image) : null; // 그림 파일이 다 읽히기 전(null)에는 임시 얼굴
+  const path = p.moods?.[mood] ?? p.image;
+  const img = path ? iconImage(path) : null; // 그림 파일이 다 읽히기 전(null)에는 임시 얼굴
   if (img) ctx.drawImage(img, x, y, PORTRAIT_SIZE, PORTRAIT_SIZE);
-  else ctx.drawImage(portraitCanvas(p.look ?? lookFor(null)), x, y);
+  else ctx.drawImage(portraitCanvas(p.look ?? lookFor(null), mood), x, y);
   ctx.strokeStyle = '#8fa8cc';
   ctx.lineWidth = 2;
   ctx.strokeRect(x + 1, y + 1, PORTRAIT_SIZE - 2, PORTRAIT_SIZE - 2);
+}
+
+// ── 지도 (메뉴의 「지도」 탭) ──
+// 지금 맵에서 가 본 곳만 칸마다 색 하나로 줄여 그린다(다른 층·건물은 보지 않는다 — 작가 지침). 문 = 노란 점, 계단·엘리베이터 = 하늘색, 사람 = 분홍, 나 = 흰색(깜빡임),
+// 길 안내 목적지 = 금색 고리. (x, y, w, h) 안에 가운데 맞춤, 한 칸은 2~12px
+const MINIMAP_COLORS = {
+  '.': '#5b6577', ',': '#55605a', ':': '#8f8a80', '_': '#3e4249', ';': '#3f6e3a', '|': '#4a4e55', P: '#34373e',
+  '#': '#1c212b', W: '#3a5a7a', '=': '#6b5a48', R: '#6b5a48', G: '#5a6b62', S: '#8a929c', H: '#9aa3ae', F: '#2d4a30',
+  V: '#11151c', T: '#24502a', B: '#24502a', '*': '#a0507a',
+};
+export function drawMinimap(ctx, world, player, target, x, y, w, h, t) {
+  // 한 칸 크기는 소수일 수 있다(큰 캠퍼스도 칸을 꽉 채우게). 칸 경계는 정수 픽셀로 맞춰 틈이 안 생기게
+  const s = Math.max(2, Math.min(12, Math.min(w / world.w, h / world.h)));
+  const ox = Math.floor(x + (w - world.w * s) / 2), oy = Math.floor(y + (h - world.h * s) / 2);
+  const px = (tx) => ox + Math.floor(tx * s), py = (ty) => oy + Math.floor(ty * s);
+  rect(ctx, '#0b0e14', ox - 4, oy - 4, Math.ceil(world.w * s) + 8, Math.ceil(world.h * s) + 8);
+  // 가 본 곳(state.js isExplored)만 그린다. 나머지는 바탕색 그대로
+  const seen = (tx, ty) => isExplored(world.id, world.w, world.h, tx, ty);
+  for (let ty = 0; ty < world.h; ty++) {
+    for (let tx = 0; tx < world.w; tx++) {
+      if (seen(tx, ty)) rect(ctx, MINIMAP_COLORS[world.tiles[ty][tx]] ?? '#1c212b', px(tx), py(ty), px(tx + 1) - px(tx), py(ty + 1) - py(ty));
+    }
+  }
+  const dot = (tx, ty, color, k = 0.8) => {
+    const d = Math.max(3, Math.round(s * k));
+    rect(ctx, color, Math.round(ox + (tx + 0.5) * s - d / 2), Math.round(oy + (ty + 0.5) * s - d / 2), d, d);
+  };
+  for (const ev of world.visibleEvents()) {
+    if (!seen(ev.x, ev.y)) continue;
+    if (ev.floors) dot(ev.x, ev.y, '#7fd3f0');
+    else if (ev.to) dot(ev.x, ev.y, '#ffd166');
+    else if (ev.sprite === 'npc') dot(ev.x, ev.y, '#f28482');
+  }
+  if (target) { // 금색 고리 — 숨 쉬듯 커졌다 작아진다
+    const r = s * 1.2 + Math.sin(t * 4) * s * 0.3 + 2;
+    ctx.strokeStyle = '#ffd98a';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(ox + (target.x + 0.5) * s, oy + (target.y + 0.5) * s, r, 0, Math.PI * 2); ctx.stroke();
+  }
+  if (Math.floor(t * 3) % 3) dot(player.x, player.y, '#ffffff', 1.1);
+  // 알림말
+  ctx.font = SMALL_FONT;
+  ctx.textBaseline = 'top';
+  const legend = [['#ffffff', '나'], ['#ffd98a', '목적지'], ['#ffd166', '문'], ['#7fd3f0', '계단·엘리베이터'], ['#f28482', '사람']];
+  let lx = x;
+  for (const [c, label] of legend) {
+    if (label === '목적지') { // 지도 위와 같은 고리
+      ctx.strokeStyle = c; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(lx + 5, y + h + 17, 5, 0, Math.PI * 2); ctx.stroke();
+    } else rect(ctx, c, lx, y + h + 12, 10, 10);
+    ctx.fillStyle = '#9aa8bd';
+    ctx.fillText(label, lx + 14, y + h + 8);
+    lx += 14 + ctx.measureText(label).width + 16;
+  }
 }
 
 // 길 안내 화살표: 캐릭터 둘레(반지름 26px)에서 목표 쪽을 가리키는 작은 삼각형. 천천히 숨 쉬듯 밝아졌다 흐려진다
@@ -1234,7 +1310,9 @@ export function drawTitle(ctx, t, menu) {
     const on = i === menu.sel;
     centered(ctx, on ? `▶ ${opt.label} ◀` : opt.label, 290 + i * 34, FONT, on ? '#ffd98a' : '#7d8aa0');
   });
-  centered(ctx, 'WASD 이동 · Shift 달리기 · Enter/F 조사 · E 소지품 · L 손전등 · Esc 메뉴', 420, SMALL_FONT, '#56657a');
+  const keys = menu.touch ? '왼쪽 패드로 이동 · 조사 버튼으로 결정 · 설정(톱니바퀴)에서 화면 버튼 끄기' // 화면 버튼(touch.js)을 쓸 때
+    : 'WASD 이동 · Shift 달리기 · Enter/F 조사 · E 소지품 · L 손전등 · Esc 메뉴';
+  centered(ctx, keys, 420, SMALL_FONT, '#56657a');
   // 오른쪽 아래 판 번호, 오른쪽 위 설정(톱니바퀴) 버튼 — menu.sel === -1이면 버튼이 골라진 상태
   ctx.font = SMALL_FONT;
   ctx.fillStyle = '#56657a';

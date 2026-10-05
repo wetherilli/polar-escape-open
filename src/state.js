@@ -1,5 +1,5 @@
-import { CURSE } from './data/curse.js?v=0.26.0';
-import { HELPS } from './data/helps.js?v=0.26.0';
+import { CURSE } from './data/curse.js?v=0.29.0';
+import { HELPS } from './data/helps.js?v=0.29.0';
 
 // 세이브 대상이 되는 진행 상태.
 //  flags   이야기 진행 플래그
@@ -10,6 +10,7 @@ import { HELPS } from './data/helps.js?v=0.26.0';
 //  notes     [noteId] — 얻은 노트 (data/notes.js), 얻은 순서대로
 //  notesRead [noteId] — 메뉴에서 펼쳐 읽은 노트 (안 읽은 것이 있으면 노트 탭에 ! 표시)
 //  helps     [helpId] — 대학원생에게 받은 도움 (data/helps.js)
+//  explored  { mapId: base64 } — 지도에 드러난 칸(가 본 곳). 한 칸 1비트. 게임 중에는 exploredCache에 풀어 두고 저장할 때 다시 묶는다
 export const state = {
   flags: {},
   items: [],
@@ -19,6 +20,7 @@ export const state = {
   notes: [],
   notesRead: [],
   helps: [],
+  explored: {},
 };
 
 export function resetState() {
@@ -30,6 +32,8 @@ export function resetState() {
   state.notes = [];
   state.notesRead = [];
   state.helps = [];
+  state.explored = {};
+  exploredCache.clear();
 }
 
 export const hasItem = (id) => state.items.includes(id);
@@ -45,10 +49,11 @@ const SAVE_VERSION = 1;
 // slot = 0~2, pos = { map, x, y, dir }, meta = { quest, place } — 슬롯 고르는 화면에 보여 줄 요약
 export function saveGame(slot, pos, meta = {}) {
   try {
+    flushExplored();
     const data = {
       v: SAVE_VERSION, ...pos, meta,
       flags: state.flags, items: state.items, quests: state.quests,
-      creatures: state.creatures, affinity: state.affinity, notes: state.notes, notesRead: state.notesRead, helps: state.helps,
+      creatures: state.creatures, affinity: state.affinity, notes: state.notes, notesRead: state.notesRead, helps: state.helps, explored: state.explored,
       savedAt: Date.now(),
     };
     localStorage.setItem(slotKey(slot), JSON.stringify(data));
@@ -84,6 +89,39 @@ export function applySave(data) {
   state.notes = [...(data.notes ?? [])];                   // v0.15.0 전 세이브에는 없다
   state.notesRead = [...(data.notesRead ?? data.notes ?? [])]; // 옛 세이브는 다 읽은 것으로
   state.helps = [...(data.helps ?? [])];                   // v0.16.0 전 세이브에는 없다
+  state.explored = { ...(data.explored ?? {}) };          // v0.27.0 전 세이브에는 없다 — 지도가 빈 채로 시작
+  exploredCache.clear();
+}
+
+// ── 지도: 가 본 곳 (메뉴의 「지도」 탭) ──
+// 맵마다 칸 수만큼의 비트. 플레이어가 지나간 자리 둘레(반지름 EXPLORE_RADIUS칸)를 드러낸다(main.js가 걸음마다 부른다)
+export const EXPLORE_RADIUS = 5;
+const exploredCache = new Map(); // mapId → Uint8Array
+function exploredBits(mapId, size) {
+  let b = exploredCache.get(mapId);
+  if (b) return b;
+  b = new Uint8Array(Math.ceil(size / 8));
+  const saved = state.explored[mapId];
+  if (saved) { const raw = atob(saved); for (let i = 0; i < Math.min(raw.length, b.length); i++) b[i] = raw.charCodeAt(i); }
+  exploredCache.set(mapId, b);
+  return b;
+}
+export function revealAround(mapId, w, h, cx, cy, r = EXPLORE_RADIUS) {
+  const b = exploredBits(mapId, w * h);
+  for (let y = Math.max(0, cy - r); y <= Math.min(h - 1, cy + r); y++) {
+    for (let x = Math.max(0, cx - r); x <= Math.min(w - 1, cx + r); x++) {
+      if ((x - cx) ** 2 + (y - cy) ** 2 > r * r + r) continue; // 둥글게
+      const i = y * w + x;
+      b[i >> 3] |= 1 << (i & 7);
+    }
+  }
+}
+export function isExplored(mapId, w, h, x, y) {
+  const i = y * w + x;
+  return !!(exploredBits(mapId, w * h)[i >> 3] & (1 << (i & 7)));
+}
+function flushExplored() {
+  for (const [id, b] of exploredCache) state.explored[id] = btoa(String.fromCharCode(...b));
 }
 
 // ── 저주 (data/curse.js) ──
