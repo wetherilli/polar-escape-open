@@ -1,5 +1,6 @@
-import { SCREEN_W, SCREEN_H, TEXT_SPEED } from './config.js?v=0.21.2';
-import { panel, FONT, SMALL_FONT } from './render.js?v=0.21.2';
+import { SCREEN_W, SCREEN_H, TEXT_SPEED } from './config.js?v=0.22.0';
+import { panel, FONT, SMALL_FONT, drawPortrait, PORTRAIT_SIZE } from './render.js?v=0.22.0';
+import { PORTRAITS } from './data/portraits.js?v=0.22.0';
 
 const BOX_DEFAULT = { x: 16, y: SCREEN_H - 132, w: SCREEN_W - 32, h: 116, pad: 18, lineH: 26 };
 const LINES_PER_PAGE = 3;
@@ -7,6 +8,9 @@ const LINES_PER_PAGE = 3;
 const SUB_BOX = { ...BOX_DEFAULT, y: SCREEN_H - 160, h: 144 };
 const SUB_LINES_PER_PAGE = 2;
 const SUB_LINE_H = 19;
+// 초상화가 있을 때: 창 왼쪽에 얼굴(위아래 가운데), 글은 그 오른쪽부터
+const FACE_X = 10;
+const FACE_TEXT_X = FACE_X + PORTRAIT_SIZE + 16;
 
 // 띄어쓰기 단위로 줄을 바꾼다(영어 대사가 단어 중간에서 잘리지 않게).
 // 한 단어가 한 줄보다 길면 그 단어만 글자 단위로 끊는다.
@@ -40,11 +44,15 @@ export class Dialog {
   }
 
   // sub = 자막(번역 줄). 줄 수는 2줄까지 보인다.
-  open(text, { speaker = null, choices = null, sub = null } = {}) {
+  // face = false면 화자에게 초상화(data/portraits.js)가 있어도 띄우지 않는다
+  open(text, { speaker = null, choices = null, sub = null, face = true } = {}) {
+    this.face = face !== false && speaker ? PORTRAITS[speaker] ?? null : null;
+    this.textX = this.face ? FACE_TEXT_X : BOX_DEFAULT.pad;
+    const textW = BOX_DEFAULT.w - this.textX - BOX_DEFAULT.pad;
     this.m.font = SMALL_FONT;
-    this.sub = sub ? wrap(this.m, sub, BOX_DEFAULT.w - BOX_DEFAULT.pad * 2).slice(0, 2) : null;
+    this.sub = sub ? wrap(this.m, sub, textW).slice(0, 2) : null;
     this.m.font = FONT;
-    const lines = wrap(this.m, text, BOX_DEFAULT.w - BOX_DEFAULT.pad * 2);
+    const lines = wrap(this.m, text, textW);
     const per = this.sub ? SUB_LINES_PER_PAGE : LINES_PER_PAGE;
     this.pages = [];
     for (let i = 0; i < lines.length; i += per) this.pages.push(lines.slice(i, i + per));
@@ -104,6 +112,8 @@ export class Dialog {
     const BOX = this.sub ? SUB_BOX : BOX_DEFAULT;
 
     panel(ctx, BOX.x, BOX.y, BOX.w, BOX.h);
+    if (this.face) drawPortrait(ctx, this.face, BOX.x + FACE_X, BOX.y + Math.round((BOX.h - PORTRAIT_SIZE) / 2));
+    const tx = BOX.x + this.textX;
 
     if (this.speaker) {
       const w = ctx.measureText(this.speaker).width + 28;
@@ -116,7 +126,7 @@ export class Dialog {
     let budget = Math.floor(this.shown);
     this.pages[this.page].forEach((line, i) => {
       if (budget <= 0) return;
-      ctx.fillText(line.slice(0, budget), BOX.x + BOX.pad, BOX.y + BOX.pad + i * BOX.lineH);
+      ctx.fillText(line.slice(0, budget), tx, BOX.y + BOX.pad + i * BOX.lineH);
       budget -= line.length;
     });
 
@@ -124,10 +134,10 @@ export class Dialog {
     if (this.sub && !this.typing) {
       const y = BOX.y + BOX.pad + SUB_LINES_PER_PAGE * BOX.lineH + 6;
       ctx.fillStyle = '#3b4a63';
-      ctx.fillRect(BOX.x + BOX.pad, y - 5, BOX.w - BOX.pad * 2 - 30, 1);
+      ctx.fillRect(tx, y - 5, BOX.x + BOX.w - BOX.pad - 30 - tx, 1);
       ctx.font = SMALL_FONT;
       ctx.fillStyle = '#9fb7d9';
-      this.sub.forEach((line, i) => ctx.fillText(line, BOX.x + BOX.pad, y + 2 + i * SUB_LINE_H));
+      this.sub.forEach((line, i) => ctx.fillText(line, tx, y + 2 + i * SUB_LINE_H));
       ctx.font = FONT;
     }
 

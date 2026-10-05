@@ -1,6 +1,6 @@
-import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.21.2';
-import { ITEMS } from './data/items.js?v=0.21.2';
-import { SOLID_TILES as SOLID } from './world.js?v=0.21.2';
+import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.22.0';
+import { ITEMS } from './data/items.js?v=0.22.0';
+import { SOLID_TILES as SOLID } from './world.js?v=0.22.0';
 
 export const FONT = '18px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
 export const SMALL_FONT = '14px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
@@ -695,6 +695,42 @@ function drawPerson(ctx, x, y, dir, body, head, bob = 0, frame = 0) {
   ctx.beginPath(); ctx.ellipse(x + 16, y + 30, 9, 3, 0, 0, Math.PI * 2); ctx.fill();
   ctx.drawImage(personCanvas(dir ?? 'down', frame, body, head), x, y + bob);
 }
+// ── 대화 초상화 (24×24 픽셀 그림을 4배로 = 96×96) ──
+// 글자: h 머리카락 · s 피부 · e 눈 · n 코 그늘 · m 입 · w 셔츠 깃 · b 옷 · d 옷 그늘. 색은 data/portraits.js
+// 그림 파일(image)이 있으면 그것을 그린다. 바꿀 곳은 drawPortrait 안쪽뿐.
+export const PORTRAIT_SIZE = 96;
+const PORTRAIT_ROWS = [
+  '........hhhhhhhh........', '......hhhhhhhhhhhh......', '.....hhhhhhhhhhhhhh.....', '....hhhhhhhhhhhhhhhh....',
+  '....hhhhhhhhhhhhhhhh....', '....hhhhsssshhsssshh....', '....hssssssssssssssh....', '....hssssssssssssssh....',
+  '....hsseesssssseessh....', '....hsseesssssseessh....', '....ssssssssssssssss....', '.....ssssssnnssssss.....',
+  '.....ssssssssssssss.....', '......sssssmmsssss......', '.......ssssssssss.......', '.........ssssss.........',
+  '......bbbwwwwwwbbb......', '....bbbbbwwwwwwbbbbb....', '...bbbbbbbwwwwbbbbbbb...', '..dbbbbbbbbwwbbbbbbbbd..',
+  '..dbbbbbbbbbbbbbbbbbbd..', '.ddbbbbbbbbbbbbbbbbbbdd.', '.ddbbbbbbbbbbbbbbbbbbdd.', '.ddbbbbbbbbbbbbbbbbbbdd.',
+];
+const portraitCache = new Map();
+function portraitCanvas(body, hair) {
+  const key = `${body}/${hair}`;
+  let c = portraitCache.get(key);
+  if (c) return c;
+  const pal = { h: hair, s: '#f1c9a0', e: '#1b1f27', n: '#d9ab84', m: '#b86a5c', w: '#eef1f4', b: body, d: shade(body) };
+  c = document.createElement('canvas');
+  c.width = c.height = PORTRAIT_SIZE;
+  const g = c.getContext('2d');
+  PORTRAIT_ROWS.forEach((row, y) => [...row].forEach((ch, x) => { if (pal[ch]) rect(g, pal[ch], x * 4, y * 4, 4, 4); }));
+  portraitCache.set(key, c);
+  return c;
+}
+export function drawPortrait(ctx, p, x, y) {
+  ctx.fillStyle = '#16213a';
+  ctx.fillRect(x, y, PORTRAIT_SIZE, PORTRAIT_SIZE);
+  const img = p.image ? iconImage(p.image) : null; // 그림 파일이 다 읽히기 전(null)에는 임시 얼굴
+  if (img) ctx.drawImage(img, x, y, PORTRAIT_SIZE, PORTRAIT_SIZE);
+  else ctx.drawImage(portraitCanvas(p.body ?? '#7a8a9a', p.hair ?? '#2a2420'), x, y);
+  ctx.strokeStyle = '#8fa8cc';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 1, y + 1, PORTRAIT_SIZE - 2, PORTRAIT_SIZE - 2);
+}
+
 // 걷는 중이면 한 칸 걸음의 앞쪽 절반에 발을 내딛는 장면. 칸마다 왼발·오른발을 번갈아
 const walkFrame = (moving, t, x, y) => (moving && t < 0.6 ? 1 + ((x + y) & 1) : 0);
 
