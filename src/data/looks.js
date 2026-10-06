@@ -25,10 +25,10 @@ export const LOOKS = {
   '수오': { hairColor: '#171412', skin: '#977049', top: 'hoodie', topColor: '#01060e', bottom: 'shorts', bottomColor: '#040506', shoes: 'sneakers' },
   'Campbell': { hair: 'ponytail', hairColor: '#d28732', skin: '#f3d6bd', top: 'tshirt', topColor: '#8f5c32', bottomColor: '#eef2f6', shoes: 'slippers' },
   '홍보실 직원': { hair: 'bob', hairColor: '#3a2a22', top: 'suit', topColor: '#dad7d8', bottomColor: '#3a3340' },
-  '(경비원)': { hair: 'cap', capColor: '#2e3a4f', top: 'uniform', topColor: '#3b4b63', bottom: 'pants', bottomColor: '#2b3445', shoes: 'shoes' },
+  '경비원': { hair: 'cap', capColor: '#2e3a4f', top: 'uniform', topColor: '#3b4b63', bottom: 'pants', bottomColor: '#2b3445', shoes: 'shoes' },
   '청현': { hair: 'ponytail', hairColor: '#1f1a17', top: 'labcoat', topColor: '#5b8bd9', bottom: 'shorts', bottomColor: '#3d4452', shoes: 'slippers' },
-  '(유상)': { hairColor: '#0e0c0b', skin: '#caa681', top: 'tshirt', topColor: '#000000', bottomColor: '#04060b' },
-  '(석초이)': { hairColor: '#141110', skin: '#c4a687', top: 'tshirt', topColor: '#f7f7f7', bottom: 'shorts', bottomColor: '#b7a89e', shoes: 'slippers', shoeColor: '#cad3dd' },
+  '유상': { hairColor: '#0e0c0b', skin: '#caa681', top: 'tshirt', topColor: '#000000', bottomColor: '#04060b' },
+  '석초이': { hairColor: '#141110', skin: '#c4a687', top: 'tshirt', topColor: '#f7f7f7', bottom: 'shorts', bottomColor: '#b7a89e', shoes: 'slippers', shoeColor: '#cad3dd' },
 };
 
 // 이름 → 겉모습. color = 맵에서 준 옷 색(LOOKS에 없을 때 쓴다), extra = 이벤트의 look 필드(장면마다 덧입히기)

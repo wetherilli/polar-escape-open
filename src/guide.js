@@ -6,10 +6,10 @@
 // 가장 가까운 문·계단을 가리킨다. 지금은 지나갈 수 없는 것(잠긴 엘리베이터, 무너진 계단, 방문증 없는 출입구,
 // 도움을 받기 전의 도움 문, 보이지 않는 이벤트)은 길로 치지 않는다.
 
-import { MAPS } from './data/maps.js?v=0.31.0';
-import { QUESTS } from './data/quests.js?v=0.31.0';
-import { PROLOGUE_GOALS } from './data/prologue.js?v=0.31.0';
-import { state, hasItem, helpTags } from './state.js?v=0.31.0';
+import { MAPS } from './data/maps.js?v=0.32.0';
+import { QUESTS } from './data/quests.js?v=0.32.0';
+import { PROLOGUE_GOALS } from './data/prologue.js?v=0.32.0';
+import { state, hasItem, helpTags } from './state.js?v=0.32.0';
 
 // 길 안내 목표 (없으면 null). 오프닝(낮, flags.pro 0~4) 동안은 PROLOGUE_GOALS, 그 뒤로는 퀘스트
 export function guideGoal() {

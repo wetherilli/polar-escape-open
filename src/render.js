@@ -1,8 +1,8 @@
-import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.31.0';
-import { ITEMS } from './data/items.js?v=0.31.0';
-import { lookFor } from './data/looks.js?v=0.31.0';
-import { SOLID_TILES as SOLID } from './world.js?v=0.31.0';
-import { isExplored } from './state.js?v=0.31.0';
+import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.32.0';
+import { ITEMS } from './data/items.js?v=0.32.0';
+import { lookFor } from './data/looks.js?v=0.32.0';
+import { SOLID_TILES as SOLID } from './world.js?v=0.32.0';
+import { isExplored } from './state.js?v=0.32.0';
 
 export const FONT = '18px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
 export const SMALL_FONT = '14px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
@@ -369,11 +369,11 @@ const TILES = {
   '*': drawPixelTile('flowerbed'), // 화단 (통과 불가)
   '|': drawPixelTile('parking'),  // 주차장 (주차선)
   P: drawPixelTile('pilotis'),    // 필로티 (건물 1층을 차가 지나감)
-  H(ctx, x, y, o) { // 건물 외벽 — 낮: 밝은 외장 + 하늘이 비친 유리 / 밤: 창 몇 개만 불이 켜져 있다
+  H(ctx, x, y, o) { // 건물 외벽 — 낮: 밝은 외장 + 하늘이 비친 유리 / 밤: 맵의 litWindows 칸만 불이 켜져 있다(야근 중인 방)
     facade(ctx, x, y, o);
     const d = day(o);
-    if (!d) for (let i = 0; i < 2; i++) {
-      if ((o.tx * 13 + o.ty * 7 + i * 5) % 11 === 0) rect(ctx, '#e8c46a', x + 5 + i * 14, y + 8, 8, 10);
+    if (!d && o.world?.def.litWindows?.some(([lx, ly]) => lx === o.tx && ly === o.ty)) {
+      for (let i = 0; i < 2; i++) rect(ctx, '#e8c46a', x + 5 + i * 14, y + 8, 8, 10);
     }
     // 건물 가장자리(옆 칸이 H가 아닌 쪽)에 진한 테두리 — 건물끼리, 건물과 길이 갈라져 보이게
     const out = (dx, dy) => o.world && o.world.tiles[o.ty + dy]?.[o.tx + dx] !== 'H';
@@ -398,12 +398,216 @@ const TILES = {
   '=': drawPixelTile('desk'),      // 책상
   R: drawPixelTile('shelf'),       // 선반
   S: drawPixelTile('sink'),        // 세면대
+  X: (ctx, x, y, o) => rubbleTile(ctx, x, y, o), // 잔해 더미 (통과 불가) — 밤 겹침층에 칠한다. 바닥은 낮의 그 칸을 따른다
   G(ctx, x, y, o) {                // 설비 — 전기가 들어와 있으면 초록 불이 깜빡인다
     equipment(ctx, x, y, o);
     const on = o.state?.flags.power && Math.floor(o.t * 4 + o.tx) % 2 === 0;
     rect(ctx, on ? '#7dff9a' : '#55302f', x + 23, y + 16, 4, 3);
   },
 };
+
+// ── 붕괴 (밤) — 본편이 시작되면 연구소 전체가 무너지기 시작했다(작가 설정) ──
+// 밤에는 바닥·벽·외벽·도로 칸 일부에 금·파손·패임을 덧그린다. 칸 좌표와 맵 id로 정해지므로 늘 같은 자리에 같은 모양.
+// 얼마나 부서지는지는 DAMAGE 비율만 바꾸면 된다. 길을 막는 잔해는 맵의 밤 겹침층(night)에 X로 칠한다.
+const DAMAGE = {
+  floor: { crack: 0.09, broken: 0.025 },           // 실내 바닥 '.', 창고 바닥 ','
+  sidewalk: { crack: 0.1, broken: 0.03 },          // 보도 ':'
+  road: { crack: 0.12, area: 0.22, pothole: 0.35 }, // 차도·주차장·필로티 — area: 4×4칸 구역이 패인 구간일 확률, pothole: 그 구간 안에서 깊은 구멍일 확률
+  facade: { crack: 0.22, broken: 0.05 },           // 건물 외벽 'H' — broken: 깨진 창
+  wall: { crack: 0.07 },                           // 실내 벽 '#'
+  glass: { crack: 0.12 },                          // 창문 'W'
+};
+const DAMAGE_KIND = { '.': 'floor', ',': 'floor', ':': 'sidewalk', _: 'road', '|': 'road', P: 'road', H: 'facade', '#': 'wall', W: 'glass' };
+const DAMAGE_VARIANTS = 12;
+const mapSeed = (id) => [...(id ?? '')].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7);
+
+// 덧그림 한 장(32×32, 투명 바탕) — 종류·변형마다 한 번만 그려 둔다
+const damageCache = new Map();
+function damageCanvas(kind, v) {
+  const key = `${kind}/${v}`;
+  let c = damageCache.get(key);
+  if (!c) {
+    c = document.createElement('canvas');
+    c.width = c.height = T;
+    let s = 1 + v * 7919 + kind.length * 104729;
+    const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+    DAMAGE_ART[kind](c.getContext('2d'), rnd);
+    damageCache.set(key, c);
+  }
+  return c;
+}
+
+// 금 한 줄: (x, y)에서 각도 a로 len픽셀, 지그재그로 꺾이며(처음 방향에서 너무 벗어나지 않게).
+// 밝은 결을 한 칸 아래에 깔아 패인 느낌. thick: 앞쪽 몇 할을 2픽셀 굵기로. 가끔 곁가지
+function crackLine(g, rnd, x, y, a, len, dark, light, branch = true, box = [0, 0, T, T], thick = 0) {
+  const a0 = a;
+  for (let i = 0; i < len; i++) {
+    if (rnd() < 0.35) a = a0 + Math.max(-0.8, Math.min(0.8, a - a0 + (rnd() - 0.5) * 1.4));
+    x += Math.cos(a); y += Math.sin(a);
+    const px = Math.round(x), py = Math.round(y);
+    if (px < box[0] || py < box[1] || px >= box[2] || py >= box[3]) return;
+    const w = i < len * thick ? 2 : 1;
+    if (light) rect(g, light, px, py + 1, w, 1);
+    rect(g, dark, px, py, w, 1);
+    if (branch && i > 3 && rnd() < 0.07) crackLine(g, rnd, x, y, a + (rnd() < 0.5 ? 0.9 : -0.9), len * 0.4, dark, light, false, box);
+  }
+}
+// 가장자리 한 점에서 맞은편 쪽으로 뻗는 금
+function crackAcross(g, rnd, dark, light, len, box = [0, 0, T, T], thick = 0) {
+  const w = box[2] - box[0], h = box[3] - box[1], at = () => 0.2 + rnd() * 0.6;
+  const starts = [[box[0] + w * at(), box[1], Math.PI / 2], [box[2] - 1, box[1] + h * at(), Math.PI],
+    [box[0] + w * at(), box[3] - 1, -Math.PI / 2], [box[0], box[1] + h * at(), 0]];
+  const [x, y, a] = starts[Math.floor(rnd() * 4)];
+  crackLine(g, rnd, x, y, a + (rnd() - 0.5) * 0.8, len, dark, light, true, box, thick);
+}
+// 마감이 떨어져 나간 자리: 들쭉날쭉한 어두운 조각 + 윗가장자리의 밝은 깨진 면
+function spall(g, rnd, x, y, w, h, dark, edge) {
+  for (let k = 0; k < h; k++) {
+    const l = Math.floor(rnd() * 2) + (k === 0 || k === h - 1 ? 1 : 0), r = Math.floor(rnd() * 2) + (k === 0 || k === h - 1 ? 1 : 0);
+    rect(g, dark, x + l, y + k, w - l - r, 1);
+  }
+  rect(g, edge, x + 1, y - 1, w - 2, 1);
+}
+// 울퉁불퉁한 덩어리(원 몇 개를 겹침) — 구멍·웅덩이·잔해 바닥
+function blob(g, rnd, cx, cy, r, color) {
+  g.fillStyle = color;
+  for (let k = 0; k < 4; k++) {
+    g.beginPath();
+    g.arc(cx + (rnd() - 0.5) * r, cy + (rnd() - 0.5) * r * 0.7, r * (0.55 + rnd() * 0.35), 0, Math.PI * 2);
+    g.fill();
+  }
+}
+// 깨진 조각 하나(삼각·사각 파편)
+function shard(g, rnd, x, y, size, fill, edge) {
+  g.fillStyle = fill; g.strokeStyle = edge; g.lineWidth = 1;
+  g.beginPath();
+  const n = 3 + Math.floor(rnd() * 2), a0 = rnd() * Math.PI;
+  for (let k = 0; k < n; k++) {
+    const a = a0 + (k / n) * Math.PI * 2, rr = size * (0.6 + rnd() * 0.5);
+    g[k ? 'lineTo' : 'moveTo'](Math.round(x + Math.cos(a) * rr) + 0.5, Math.round(y + Math.sin(a) * rr) + 0.5);
+  }
+  g.closePath(); g.fill(); g.stroke();
+}
+
+// 각 함수: (g, rnd) — 밤 색만 쓴다(낮에는 붕괴가 없다)
+const DAMAGE_ART = {
+  floorCrack(g, rnd) { crackAcross(g, rnd, '#16191f', 'rgba(140,150,170,0.25)', 22 + rnd() * 14); },
+  // 바닥 타일 한 장(16×16)이 깨져 꺼지고 조각이 흩어짐 + 둘레로 금
+  floorBroken(g, rnd) {
+    const qx = rnd() < 0.5 ? 0 : 16, qy = rnd() < 0.5 ? 0 : 16;
+    for (let y = 0; y < 16; y++) { // 들쭉날쭉한 가장자리
+      const l = Math.floor(rnd() * 3), r = Math.floor(rnd() * 3);
+      rect(g, '#1c1f25', qx + l, qy + y, 16 - l - r, 1);
+    }
+    rect(g, '#25292f', qx + 3, qy + 3, 10, 10); // 드러난 콘크리트 바닥
+    for (let k = 0; k < 8; k++) rect(g, '#30343b', qx + 3 + Math.floor(rnd() * 10), qy + 3 + Math.floor(rnd() * 10), 1, 1);
+    for (let k = 0; k < 4; k++) shard(g, rnd, qx + 3 + rnd() * 10, qy + 3 + rnd() * 10, 2 + rnd() * 2, rnd() < 0.5 ? '#4a5160' : '#414855', '#1a1d23');
+    for (let k = 0; k < 3; k++) shard(g, rnd, 2 + rnd() * 28, 2 + rnd() * 28, 1.5, '#4f5666', '#1a1d23'); // 튄 조각
+    crackLine(g, rnd, qx + 8, qy + 8, rnd() * Math.PI * 2, 18, '#16191f', 'rgba(140,150,170,0.25)');
+  },
+  sidewalkCrack(g, rnd) { crackAcross(g, rnd, '#141619', 'rgba(120,125,135,0.25)', 20 + rnd() * 14); },
+  // 보도블록 한 장이 빠져 흙이 드러남
+  sidewalkBroken(g, rnd) {
+    const row = Math.floor(rnd() * 4), off = row % 2 ? 8 : 0, col = Math.floor(rnd() * 2);
+    const bx = Math.max(0, col * 16 + off + 1), by = row * 8 + 1, w = Math.min(15, 32 - bx);
+    rect(g, '#1d1915', bx, by, w, 7);
+    for (let k = 0; k < 10; k++) rect(g, rnd() < 0.5 ? '#2a241e' : '#14110e', bx + Math.floor(rnd() * w), by + Math.floor(rnd() * 7), 1, 1);
+    shard(g, rnd, bx + w * rnd(), by + 3, 3, '#41454d', '#1a1c20'); // 들린 블록 조각
+    crackAcross(g, rnd, '#141619', 'rgba(120,125,135,0.25)', 14);
+  },
+  roadCrack(g, rnd) {
+    crackAcross(g, rnd, '#0b0c0e', 'rgba(90,95,105,0.35)', 28 + rnd() * 10);
+    if (rnd() < 0.5) crackAcross(g, rnd, '#0b0c0e', 'rgba(90,95,105,0.35)', 16);
+  },
+  // 패인 구간의 칸: 아스팔트가 군데군데 내려앉고 부서진 조각이 흩어짐 (칸 경계에서 잘리지 않게 안쪽에만)
+  roadRough(g, rnd) {
+    for (let k = 0; k < 3; k++) blob(g, rnd, 8 + rnd() * 16, 8 + rnd() * 16, 3 + rnd() * 2, 'rgba(0,0,0,0.3)');
+    for (let k = 0; k < 10; k++) shard(g, rnd, 2 + rnd() * 28, 2 + rnd() * 28, 1 + rnd() * 1.5, rnd() < 0.5 ? '#33373e' : '#2a2d33', '#141619'); // 부서진 아스팔트 조각
+    crackAcross(g, rnd, '#0b0c0e', 'rgba(90,95,105,0.3)', 24 + rnd() * 12, [0, 0, T, T], 0.3);
+  },
+  // 패인 곳: 거친 바닥 위에 깊은 구멍 + 들뜬 테두리 + 가끔 고인 물
+  pothole(g, rnd) {
+    DAMAGE_ART.roadRough(g, rnd);
+    const cx = 12 + rnd() * 8, cy = 12 + rnd() * 8, r = 8 + rnd() * 4;
+    const hole = (rr, color) => { // 원 여럿을 겹친 들쭉날쭉한 구멍
+      g.fillStyle = color;
+      for (let k = 0; k < 7; k++) {
+        const a = (k / 7) * Math.PI * 2;
+        g.beginPath(); g.arc(cx + Math.cos(a) * rr * 0.45, cy + Math.sin(a) * rr * 0.3, rr * (0.45 + rnd() * 0.25), 0, Math.PI * 2); g.fill();
+      }
+    };
+    hole(r + 2, '#2c3036');
+    hole(r, '#0b0c0f');
+    hole(r * 0.55, '#121418');
+    if (rnd() < 0.45) { hole(r * 0.45, '#16222e'); rect(g, '#2d4256', Math.round(cx - 2), Math.round(cy), 4, 1); } // 고인 물
+  },
+  // 외벽: 굵게 갈라진 금 + 마감이 떨어져 나간 자리
+  facadeCrack(g, rnd) {
+    crackAcross(g, rnd, '#0a0c10', 'rgba(110,120,140,0.35)', 30 + rnd() * 14, [0, 0, T, T], 0.5);
+    if (rnd() < 0.4) crackAcross(g, rnd, '#0a0c10', 'rgba(110,120,140,0.35)', 16);
+    if (rnd() < 0.4) spall(g, rnd, 2 + Math.floor(rnd() * 22), 3 + Math.floor(rnd() * 22), 4 + Math.floor(rnd() * 4), 3 + Math.floor(rnd() * 3), '#1a1e26', '#454c5a');
+  },
+  // 깨진 창: 유리 한 장이 깨져 안이 시커멓고 날카로운 조각만 남음
+  facadeBroken(g, rnd) {
+    const wx = rnd() < 0.5 ? 5 : 19;
+    rect(g, '#05070a', wx, 8, 8, 10);
+    g.fillStyle = '#3c4658';
+    g.beginPath(); g.moveTo(wx, 8); g.lineTo(wx + 3 + rnd() * 4, 8); g.lineTo(wx, 11 + rnd() * 4); g.fill();
+    g.beginPath(); g.moveTo(wx + 8, 18); g.lineTo(wx + 8, 13 + rnd() * 3); g.lineTo(wx + 3 + rnd() * 3, 18); g.fill();
+    crackAcross(g, rnd, '#0a0c10', 'rgba(110,120,140,0.35)', 16);
+  },
+  wallCrack(g, rnd) {
+    crackAcross(g, rnd, '#0b0d12', 'rgba(90,100,120,0.3)', 22 + rnd() * 10, [0, 7, T, T], 0.4);
+    if (rnd() < 0.3) spall(g, rnd, 3 + Math.floor(rnd() * 20), 10 + Math.floor(rnd() * 16), 5, 3, '#14171e', '#353c4c');
+  },
+  // 금 간 유리창: 한 점에서 퍼지는 금
+  glassCrack(g, rnd) {
+    const cx = 8 + rnd() * 16, cy = 10 + rnd() * 10;
+    for (let k = 0; k < 5 + Math.floor(rnd() * 3); k++) crackLine(g, rnd, cx, cy, rnd() * Math.PI * 2, 6 + rnd() * 10, 'rgba(210,225,245,0.55)', null, false, [4, 7, T - 4, T - 6]);
+    rect(g, 'rgba(230,240,255,0.7)', Math.round(cx), Math.round(cy), 1, 1);
+  },
+  // 잔해 더미: 무너진 콘크리트 덩어리·철근·부스러기
+  rubble(g, rnd) {
+    g.fillStyle = 'rgba(0,0,0,0.35)';
+    g.beginPath(); g.ellipse(16, 25, 14, 5, 0, 0, Math.PI * 2); g.fill();
+    blob(g, rnd, 16, 19, 10, '#2f333b');
+    const rocks = ['#4b505a', '#585e69', '#3f444d', '#646a75'];
+    for (let k = 0; k < 9; k++) shard(g, rnd, 5 + rnd() * 22, 8 + rnd() * 17, 2.5 + rnd() * 3.5, rocks[Math.floor(rnd() * 4)], '#16181d');
+    g.strokeStyle = '#7a4f3a'; g.lineWidth = 1; // 철근
+    for (let k = 0; k < 2; k++) {
+      const x = 6 + rnd() * 20, y = 8 + rnd() * 12;
+      g.beginPath(); g.moveTo(x + 0.5, y + 0.5); g.lineTo(x + (rnd() - 0.5) * 14 + 0.5, y - 4 - rnd() * 5 + 0.5); g.stroke();
+    }
+    for (let k = 0; k < 14; k++) rect(g, '#6b707a', 3 + Math.floor(rnd() * 26), 10 + Math.floor(rnd() * 19), 1, 1);
+  },
+};
+
+// 이 칸에 덧그릴 붕괴 그림 이름 (없으면 null)
+function damageAt(world, tx, ty, ch) {
+  const kind = DAMAGE_KIND[ch];
+  if (!kind) return null;
+  const p = DAMAGE[kind], seed = mapSeed(world.id), r = hash(tx, ty, seed);
+  if (kind === 'road') {
+    if (hash(tx >> 2, ty >> 2, seed + 3) < p.area && hash(tx, ty, seed + 9) < 0.6) { // 패인 구간
+      return hash(tx, ty, seed + 5) < p.pothole ? 'pothole' : 'roadRough';
+    }
+    return r < p.crack ? 'roadCrack' : null;
+  }
+  if (r < p.crack) return `${kind}Crack`;
+  if (p.broken && r < p.crack + p.broken) return `${kind}Broken`;
+  return null;
+}
+function drawDamage(ctx, world, tx, ty, ch, x, y) {
+  const art = damageAt(world, tx, ty, ch);
+  if (art) ctx.drawImage(damageCanvas(art, Math.floor(hash(tx, ty, 11) * DAMAGE_VARIANTS)), x, y);
+}
+
+// 잔해 칸: 낮의 그 칸 그림(바닥·도로 등) 위에 잔해 더미
+function rubbleTile(ctx, x, y, o) {
+  const under = o.world?.dayTiles?.[o.ty]?.[o.tx];
+  (under && under !== 'X' && TILES[under] ? TILES[under] : floor)(ctx, x, y, o);
+  ctx.drawImage(damageCanvas('rubble', Math.floor(hash(o.tx, o.ty, 13) * DAMAGE_VARIANTS)), x, y);
+}
 
 // o = { t, state, ev } — ev는 이벤트 정의 전체(커스텀 필드 포함)
 const SPRITES = {
@@ -495,7 +699,7 @@ const SPRITES = {
   booth(ctx, x, y, o) { // 경비실 창구
     rect(ctx, day(o) ? '#dfe3e8' : '#2a2f3a', x, y, T, T);
     rect(ctx, day(o) ? '#7fb3dc' : '#141a24', x + 4, y + 4, T - 8, 16);
-    if (day(o)) drawPerson(ctx, x, y - 6, 'down', lookFor('(경비원)'));
+    if (day(o)) drawPerson(ctx, x, y - 6, 'down', lookFor('경비원'));
     rect(ctx, '#8a7350', x + 2, y + 20, T - 4, 6);
   },
   register(ctx, x, y, o) { // 카페 카운터 + 계산대
@@ -689,8 +893,9 @@ export function drawWorld(ctx, world, player, state, cam, t, follower = null, ch
   for (let ty = y0; ty <= y0 + SCREEN_H / T + 1; ty++) {
     for (let tx = x0; tx <= x0 + SCREEN_W / T + 1; tx++) {
       if (tx < 0 || ty < 0 || tx >= world.w || ty >= world.h) continue;
-      const draw = TILES[world.tiles[ty][tx]] ?? wall;
-      draw(ctx, tx * T - cam.x, ty * T - cam.y, { tx, ty, t, state, world });
+      const ch = world.tiles[ty][tx];
+      (TILES[ch] ?? wall)(ctx, tx * T - cam.x, ty * T - cam.y, { tx, ty, t, state, world });
+      if (!state.flags.day) drawDamage(ctx, world, tx, ty, ch, tx * T - cam.x, ty * T - cam.y);
     }
   }
   for (const ev of world.visibleEvents()) {

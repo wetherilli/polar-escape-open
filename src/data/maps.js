@@ -13,6 +13,7 @@
 //  name     화면 왼쪽 위 표시 이름
 //  rows     타일 문자열.  #=벽  .=바닥  W=창문  ==책상  R=선반  G=설비  S=세면대  V=아래층이 내다보이는 트인 공간(난간)
 //                         ,=창고 바닥  :=보도  _=차도  ;=잔디  |=주차장  P=필로티(건물 1층 차량 통로)  T=나무  B=큰 나무(2×2 덩어리로)  *=화단  H=건물 외벽  F=부지 경계
+//                         X=잔해 더미(밤 겹침층에만 쓴다)
 //                         (. , : _ ; | P 빼고 통과 불가)
 //           소문자(a-z) = 이벤트 위치 → events[글자]. 같은 글자를 여러 칸에 써도 된다.
 //  cold     { seconds, exit:[맵, 앵커, 방향] } — 체온이 seconds초 동안 바닥나면 exit로 이동
@@ -20,6 +21,9 @@
 //  lit      true면 불 켜진 방(세이브 포인트가 있는 야근 방 등) — 항상 밝다
 //  onEnter  async (c) => {} 맵에 들어올 때마다 실행
 //  internal true면 공개 배포본에서 뺄 맵 (CLAUDE.md 「공개 범위」)
+//  night    밤 겹침층 — rows와 같은 크기의 줄. 공백 = 낮과 같음, 다른 글자 = 밤(본편)에만 그 타일(무너진 잔해 X 등).
+//           이벤트 칸은 바꾸지 않는다. 금·파손·패인 도로는 render.js DAMAGE가 저절로 그린다. 편집기 「밤 칸」으로 칠한다
+//  litWindows [[x, y], …] 밤에 불이 켜진 외벽(H) 칸 — 야근 중인 방. 나머지 창은 모두 꺼져 있다
 //  overhead [[x, y, w, h], …] 위층 덮개 칸 — 사람 위에 반투명하게 그린다(구름다리 등). 필로티 P 칸은 저절로 덮인다
 //
 // 이벤트 필드
@@ -41,16 +45,16 @@
 //              (도착 칸 = 앵커 칸에서 그 방향으로 한 칸)
 // ─────────────────────────────────────────────
 
-import { PROLOGUE, PROLOGUE_START, STAFF } from './prologue.js?v=0.31.0';
-import { NPCS, EXAMPLE_ITEM } from './npcs.js?v=0.31.0';
-import { crowd } from './crowd.js?v=0.31.0';
-import { CH1 } from './chapter1.js?v=0.31.0';
-import { SHARK } from './shark.js?v=0.31.0';
-import { CREATURES } from './creatures.js?v=0.31.0';
-import { ITEMS } from './items.js?v=0.31.0';
-import { josa } from '../text.js?v=0.31.0';
-import { pickEnding } from './endings.js?v=0.31.0';
-import { helpTags } from '../state.js?v=0.31.0';
+import { PROLOGUE, PROLOGUE_START, STAFF } from './prologue.js?v=0.32.0';
+import { NPCS, EXAMPLE_ITEM } from './npcs.js?v=0.32.0';
+import { crowd } from './crowd.js?v=0.32.0';
+import { CH1 } from './chapter1.js?v=0.32.0';
+import { SHARK } from './shark.js?v=0.32.0';
+import { CREATURES } from './creatures.js?v=0.32.0';
+import { ITEMS } from './items.js?v=0.32.0';
+import { josa } from '../text.js?v=0.32.0';
+import { pickEnding } from './endings.js?v=0.32.0';
+import { helpTags } from '../state.js?v=0.32.0';
 
 export const START = PROLOGUE_START;
 
@@ -221,6 +225,7 @@ export const MAPS = {
   // 건물 크기는 사진에서 어림한 값. 줄은 tools/mapview.html 편집기로 고쳐도 된다.
   campus: {
     name: '극지연구소 (야외)',
+    litWindows: [[33, 96], [44, 46]], // 밤에 불 켜진 창: 연구지원동 북서동 북동쪽 끝(306호 쪽) · 제1연구동
     overhead: [[35, 102, 2, 2]], // 위층 덮개: 연구지원동 두 동 사이 2층 구름다리 (필로티 P는 저절로 덮인다)
     rows: [
       'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF',

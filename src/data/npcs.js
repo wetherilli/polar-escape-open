@@ -6,8 +6,8 @@
 //  run    말을 걸었을 때의 스크립트
 // ─────────────────────────────────────────────
 
-import { CREATURES } from './creatures.js?v=0.31.0';
-import { CH1 } from './chapter1.js?v=0.31.0';
+import { CREATURES } from './creatures.js?v=0.32.0';
+import { CH1 } from './chapter1.js?v=0.32.0';
 
 const A = '청현'; // 대학원생 A — 예시 인물
 

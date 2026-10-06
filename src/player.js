@@ -1,4 +1,4 @@
-import { DIRS, MOVE_SPEED } from './config.js?v=0.31.0';
+import { DIRS, MOVE_SPEED } from './config.js?v=0.32.0';
 
 // 타일 단위 이동. 이동 중엔 x,y가 목적지, fx,fy가 출발지, t(0→1)가 진행도.
 export class Player {

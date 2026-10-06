@@ -1,4 +1,4 @@
-import { SCREEN_W, SCREEN_H } from './config.js?v=0.31.0';
+import { SCREEN_W, SCREEN_H } from './config.js?v=0.32.0';
 
 export const fader = {
   alpha: 0,
