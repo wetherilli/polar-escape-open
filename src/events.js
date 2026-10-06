@@ -1,15 +1,15 @@
-import { state, hasItem, saveGame, readSave, readAllSaves, curseLevel } from './state.js?v=0.30.0';
-import { CURSE } from './data/curse.js?v=0.30.0';
-import { NOTES } from './data/notes.js?v=0.30.0';
-import { HELPS } from './data/helps.js?v=0.30.0';
-import { MAPS } from './data/maps.js?v=0.30.0';
-import { ITEMS } from './data/items.js?v=0.30.0';
-import { QUESTS } from './data/quests.js?v=0.30.0';
-import { CREATURES } from './data/creatures.js?v=0.30.0';
-import { fader } from './fader.js?v=0.30.0';
-import { sfx } from './audio.js?v=0.30.0';
+import { state, hasItem, saveGame, readSave, readAllSaves, curseLevel } from './state.js?v=0.31.0';
+import { CURSE } from './data/curse.js?v=0.31.0';
+import { NOTES } from './data/notes.js?v=0.31.0';
+import { HELPS } from './data/helps.js?v=0.31.0';
+import { MAPS } from './data/maps.js?v=0.31.0';
+import { ITEMS } from './data/items.js?v=0.31.0';
+import { QUESTS } from './data/quests.js?v=0.31.0';
+import { CREATURES } from './data/creatures.js?v=0.31.0';
+import { fader } from './fader.js?v=0.31.0';
+import { sfx } from './audio.js?v=0.31.0';
 
-import { josa } from './text.js?v=0.30.0';
+import { josa } from './text.js?v=0.31.0';
 
 const subtitle = (opts) => (opts.sub && hasItem('translator') ? opts.sub : null);
 

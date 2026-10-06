@@ -1,6 +1,6 @@
-import { MAPS } from './data/maps.js?v=0.30.0';
-import { state, helpTags } from './state.js?v=0.30.0';
-import { DIRS } from './config.js?v=0.30.0';
+import { MAPS } from './data/maps.js?v=0.31.0';
+import { state, helpTags } from './state.js?v=0.31.0';
+import { DIRS } from './config.js?v=0.31.0';
 
 // 타일 글자. 여기 없는 글자(소문자 이벤트 제외)는 tools/check.mjs가 오류로 잡는다.
 export const FLOOR_TILES = new Set(['.', ',', ':', '_', ';', '|', 'P']);

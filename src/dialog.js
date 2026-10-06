@@ -1,6 +1,6 @@
-import { SCREEN_W, SCREEN_H, TEXT_SPEED } from './config.js?v=0.30.0';
-import { panel, FONT, SMALL_FONT, drawPortrait, PORTRAIT_SIZE } from './render.js?v=0.30.0';
-import { PORTRAITS } from './data/portraits.js?v=0.30.0';
+import { SCREEN_W, SCREEN_H, TEXT_SPEED } from './config.js?v=0.31.0';
+import { panel, FONT, SMALL_FONT, drawPortrait, PORTRAIT_SIZE } from './render.js?v=0.31.0';
+import { PORTRAITS } from './data/portraits.js?v=0.31.0';
 
 const BOX_DEFAULT = { x: 16, y: SCREEN_H - 132, w: SCREEN_W - 32, h: 116, pad: 18, lineH: 26 };
 const LINES_PER_PAGE = 3;
@@ -44,9 +44,9 @@ export class Dialog {
   }
 
   // sub = 자막(번역 줄). 줄 수는 2줄까지 보인다.
-  // face = false면 화자에게 초상화(data/portraits.js)가 있어도 띄우지 않는다
+  // face = false면 화자에게 초상화(data/portraits.js)가 있어도 띄우지 않는다. 객체({ look })면 그 얼굴을 띄운다(같은 이름표의 여러 사람)
   open(text, { speaker = null, choices = null, sub = null, face = true, mood = '보통' } = {}) {
-    this.face = face !== false && speaker ? PORTRAITS[speaker] ?? null : null;
+    this.face = face === false || !speaker ? null : typeof face === 'object' ? face : PORTRAITS[speaker] ?? null; // face에 { look } 을 주면 그 얼굴로
     this.mood = mood; // 초상화 표정 (data/portraits.js MOODS)
     this.textX = this.face ? FACE_TEXT_X : BOX_DEFAULT.pad;
     const textW = BOX_DEFAULT.w - this.textX - BOX_DEFAULT.pad;

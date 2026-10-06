@@ -6,12 +6,12 @@
 //  run    말을 걸었을 때의 스크립트
 // ─────────────────────────────────────────────
 
-import { CREATURES } from './creatures.js?v=0.30.0';
-import { CH1 } from './chapter1.js?v=0.30.0';
+import { CREATURES } from './creatures.js?v=0.31.0';
+import { CH1 } from './chapter1.js?v=0.31.0';
 
-const A = '(대학원생 A)';
+const A = '청현'; // 대학원생 A — 예시 인물
 
-// 렐 — 수오에게 전화를 건 지인. 연구소 대학원생(306호). 수오가 찾아갔을 때는 자리에 없고 캠벨뿐이었다.
+// 렐(영어 표기 Rell — 작가 확정 2026-10-06) — 수오에게 전화를 건 지인. 연구소 대학원생(306호). 수오가 찾아갔을 때는 자리에 없고 캠벨뿐이었다.
 //      아직 NPC로 등장하지 않는다. 306호의 렐 자리가 세이브 포인트다.
 const CAMPBELL = 'Campbell';
 
@@ -24,7 +24,7 @@ export const NPCS = {
     name: CAMPBELL,
     color: '#7a6a4f',
     // 가까이 가면 가끔 머리 위 말풍선으로 혼잣말 (자리표시 — 작가 작성)
-    chatter: ['(Campbell mutters — English TBD)', '(혼잣말 2 — 미정)'],
+    chatter: ['Du, DuDu...', '뚜. 뚜뚜...'],
     async run(c) {
       if (!c.flag('metCampbell')) {
         c.flag('metCampbell', true);
@@ -36,14 +36,14 @@ export const NPCS = {
       let gave = false;
       for (let carried = c.creature.carried(); carried.length; carried = c.creature.carried()) {
         const names = carried.map((id) => CREATURES[id].name);
-        const pick = await c.choose('(어떤 소동물을 건넬까? — 문구 미정)', [...names, '그만둔다']);
+        const pick = await c.choose('어떤 소동물을 건넬까?', [...names, '그만둔다']);
         if (pick >= carried.length) break;
         const id = carried[pick];
         c.creature.deliver(id, 'campbell');
         await campbell(c, CREATURES[id].reaction.en, CREATURES[id].reaction.ko);
         gave = true;
       }
-      if (!gave) await campbell(c, '(Campbell — repeat line in English, TBD)', '(한국어 자막 — 미정)');
+      if (!gave) await campbell(c, 'Did you bring another animal?', '혹시 다른 동물을 데려온 거야?');
     },
   },
 
@@ -53,19 +53,19 @@ export const NPCS = {
     color: '#5b8bd9',
     async run(c) {
       if (!c.quest.started('example')) {
-        await c.say('(퀘스트 의뢰 — 대사 미정)', A);
+        await c.say('어.. 외부인? 아냐... 혹시 내 부탁 하나 들어줄 수 있을까? 냉동실험실에 내가 휴대폰을 놓고 와서...', A);
         c.quest.start('example');
         return;
       }
-      if (c.quest.finished('example')) return c.say('(퀘스트 완료 후 — 대사 미정)', A);
+      if (c.quest.finished('example')) return c.say('고마워. 교수님한테 전화가 오면 꼭 받아야 해.', A);
       if (c.has('exampleItem')) {
         c.take('exampleItem');
-        await c.say('(물건을 건넴 — 대사 미정)', A);
+        await c.say('휴대폰을 찾아줘서 고마워.', A);
         c.quest.done('example');
         c.help.grant('exampleHelp'); // 전공 기믹 예시: 퀘스트를 끝내면 도움(helps.js)
         return;
       }
-      await c.say('(퀘스트 진행 중 — 대사 미정)', A);
+      await c.say('혹시 전화가 올 수도 있어서... 빠르게 가져다 주면 좋겠어.', A);
     },
   },
 };

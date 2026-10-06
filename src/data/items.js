@@ -25,5 +25,5 @@ export const ITEMS = {
     flavor: '(플레이버 텍스트 미정)',
   },
 
-  exampleItem: { name: '(예시 물건)', desc: '(예시 퀘스트용 — 지워도 됨)' },
+  exampleItem: { name: '청현의 휴대폰', desc: '청현이 냉동실험실에 두고 온 휴대폰. 차갑게 식어 있다.' },
 };

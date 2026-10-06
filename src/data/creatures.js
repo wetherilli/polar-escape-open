@@ -29,7 +29,7 @@ export const CREATURES = {
     tools: ['net'],
     icon: 'grasshopper',
     affinity: 1,
-    reaction: { en: '(Campbell reacts — English TBD)', ko: '(자막 미정)' },
+    reaction: { en: 'This is the first record at the Polar Research Institute!', ko: '극지연구소에서의 첫 기록이네!' },
   },
   exampleBugIn: {
     name: '(소동물 예시 2 — 안쪽 벌레)',
@@ -40,7 +40,7 @@ export const CREATURES = {
     icon: 'beetle',
     tools: ['jar'],
     affinity: 1,
-    reaction: { en: '(Campbell reacts — English TBD)', ko: '(자막 미정)' },
+    reaction: { en: 'This is a rarer insect than it looks. Thank you.', ko: '이게 보기보다 희귀한 벌레인데. 고마워.' },
   },
   exampleFish: {
     name: '(소동물 예시 3 — 사육 중인 물고기)',
@@ -51,6 +51,6 @@ export const CREATURES = {
     icon: 'fish',
     tools: ['jar'],
     affinity: 2,
-    reaction: { en: '(Campbell reacts — English TBD)', ko: '(자막 미정)' },
+    reaction: { en: 'I knew you were at the Polar Research Institute, but this is my first time seeing you.', ko: '극지연구소에 있다는 것은 알았지만, 실제로는 처음 봐.' },
   },
 };

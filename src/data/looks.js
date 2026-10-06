@@ -26,7 +26,7 @@ export const LOOKS = {
   'Campbell': { hair: 'ponytail', hairColor: '#d28732', skin: '#f3d6bd', top: 'tshirt', topColor: '#8f5c32', bottomColor: '#eef2f6', shoes: 'slippers' },
   '홍보실 직원': { hair: 'bob', hairColor: '#3a2a22', top: 'suit', topColor: '#dad7d8', bottomColor: '#3a3340' },
   '(경비원)': { hair: 'cap', capColor: '#2e3a4f', top: 'uniform', topColor: '#3b4b63', bottom: 'pants', bottomColor: '#2b3445', shoes: 'shoes' },
-  '(대학원생 A)': { hair: 'ponytail', hairColor: '#1f1a17', top: 'labcoat', topColor: '#5b8bd9', bottom: 'shorts', bottomColor: '#3d4452', shoes: 'slippers' },
+  '청현': { hair: 'ponytail', hairColor: '#1f1a17', top: 'labcoat', topColor: '#5b8bd9', bottom: 'shorts', bottomColor: '#3d4452', shoes: 'slippers' },
   '(유상)': { hairColor: '#0e0c0b', skin: '#caa681', top: 'tshirt', topColor: '#000000', bottomColor: '#04060b' },
   '(석초이)': { hairColor: '#141110', skin: '#c4a687', top: 'tshirt', topColor: '#f7f7f7', bottom: 'shorts', bottomColor: '#b7a89e', shoes: 'slippers', shoeColor: '#cad3dd' },
 };

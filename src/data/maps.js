@@ -41,15 +41,16 @@
 //              (도착 칸 = 앵커 칸에서 그 방향으로 한 칸)
 // ─────────────────────────────────────────────
 
-import { PROLOGUE, PROLOGUE_START, STAFF } from './prologue.js?v=0.30.0';
-import { NPCS, EXAMPLE_ITEM } from './npcs.js?v=0.30.0';
-import { CH1 } from './chapter1.js?v=0.30.0';
-import { SHARK } from './shark.js?v=0.30.0';
-import { CREATURES } from './creatures.js?v=0.30.0';
-import { ITEMS } from './items.js?v=0.30.0';
-import { josa } from '../text.js?v=0.30.0';
-import { pickEnding } from './endings.js?v=0.30.0';
-import { helpTags } from '../state.js?v=0.30.0';
+import { PROLOGUE, PROLOGUE_START, STAFF } from './prologue.js?v=0.31.0';
+import { NPCS, EXAMPLE_ITEM } from './npcs.js?v=0.31.0';
+import { crowd } from './crowd.js?v=0.31.0';
+import { CH1 } from './chapter1.js?v=0.31.0';
+import { SHARK } from './shark.js?v=0.31.0';
+import { CREATURES } from './creatures.js?v=0.31.0';
+import { ITEMS } from './items.js?v=0.31.0';
+import { josa } from '../text.js?v=0.31.0';
+import { pickEnding } from './endings.js?v=0.31.0';
+import { helpTags } from '../state.js?v=0.31.0';
 
 export const START = PROLOGUE_START;
 
@@ -78,8 +79,10 @@ const npc = (name, color, run) => ({
 const dayLocked = (d) => ({
   ...d,
   passable: (s) => !s.flags.day, // 길 안내(guide.js)가 지금 지나갈 수 있는 문인지 본다
-  run: (c) => (c.flag('day') ? c.say('(지금은 볼일이 없다 — 대사 미정)') : d.run(c)),
+  run: (c) => (c.flag('day') ? dayStop(c, '(지금은 볼일이 없다 — 대사 미정)') : d.run(c)),
 });
+// 낮에 막힌 곳: 카페로 가는 길(직원과 동행 중)이면 홍보실 직원이 막고, 아니면 문구만
+const dayStop = (c, text) => (PROLOGUE.escorting(c) ? PROLOGUE.staffStop(c) : sayLocked(c, text));
 // 건물 출입구 (캠퍼스 ↔ 건물). 낮이든 밤이든, 들어갈 때도 나갈 때도 방문증이 있어야 지날 수 있다(작가 지침).
 // 건물 안의 문(호실·계단·구름다리)은 해당 없음.
 const PASS_MSG = '(방문증이 없어 출입문을 지날 수 없다 — 문구 미정)';
@@ -127,11 +130,14 @@ const savePoint = {
 //  floors[i] = (i+1)층 맵 id, null이면 아직 없는 층
 //  dir = 도착 방향. 계단이 오른쪽 벽이면 'left'(기본), 왼쪽 벽이면 'right'
 //  opts.lo  = 이 계단이 닿는 가장 낮은 층. 그 아래 층은 목록에 안 나온다(floors에는 null로 둔다)
+//  opts.dayTop = 낮(flags.day)에 갈 수 있는 가장 높은 층. 그 위로 가려 하면 막힌다
 //  opts.cut = 이 층과 바로 위층 사이가 무너져 있음. 사이를 건너려 하면 막히고 opts.onCut(c)를 부른다
 const CUT_MSG = '(계단이 무너져 있어 지나갈 수 없다 — 문구 미정)';
 //  opts.below = 지하층 맵 id 목록 [지하 1층, 지하 2층 …]. 지하층에서는 here가 -1, -2 …
 //  opts.belowOpen = (c) => bool. 거짓이면 지하층으로 내려갈 수 없다
 const BELOW_LOCKED = '(지하로는 아직 내려갈 수 없다 — 문구 미정)';
+// 본관·연구동은 낮(오프닝)에는 1층만 다닌다. 2층부터는 메인 스토리(밤)부터 (작가 지침 2026-10-06) — 계단 opts.dayTop
+const DAY_UP_MSG = '(지금은 위층에 올라갈 일이 없다 — 문구 미정)';
 const floorPicker = (kind, label, anchor, floors, here, dir = 'left', opts = {}) => async (c) => {
   const list = [
     ...(opts.below ?? []).map((map, i) => ({ n: -(i + 1), map, name: `지하 ${i + 1}층` })).reverse(),
@@ -141,12 +147,13 @@ const floorPicker = (kind, label, anchor, floors, here, dir = 'left', opts = {})
   const pick = await c.choose(`[${label} ${kind}] 몇 층으로 갈까요?`, [...labels, '그만둔다']);
   const to = list[pick];
   if (!to || to.n === here) return;
+  if (opts.dayTop && c.flag('day') && to.n > opts.dayTop) return dayStop(c, DAY_UP_MSG);
   if (opts.cut && (here <= opts.cut) !== (to.n <= opts.cut)) {
     await sayLocked(c, CUT_MSG);
     return opts.onCut?.(c);
   }
   if (!to.map) return sayLocked(c, lockedMsg(`${label} ${to.name}`));
-  if (to.n < 0 && opts.belowOpen && !opts.belowOpen(c)) return sayLocked(c, BELOW_LOCKED);
+  if (to.n < 0 && opts.belowOpen && !opts.belowOpen(c)) return dayStop(c, BELOW_LOCKED);
   await c.transfer(to.map, anchor, dir);
 };
 const stairs = (label, anchor, floors, here, dir = 'left', opts = {}) => ({
@@ -188,18 +195,19 @@ const FLOORS = {
 };
 
 // 제1연구동 계단1은 4층과 5층 사이가 무너져 있다(1장). 4~6층은 계단2로 오간다.
-const r1Stairs = (here) => stairs('제1연구동', 'x', FLOORS.r1, here, 'left', { cut: 4, onCut: CH1.stairsCollapsed });
-const r1Stairs2 = (here) => stairs('제1연구동 계단2', 'y', FLOORS.r1b, here, 'right', { lo: 4 });
-const r2Stairs = (here) => stairs('제2연구동', 'y', FLOORS.r2, here);
-const r3Stairs = (here) => stairs('제3연구동', 'z', FLOORS.r3, here);
+const DAY_1F = { dayTop: 1 }; // 낮에는 1층만 (본관·연구동·연구지원동 북서동)
+const r1Stairs = (here) => stairs('제1연구동', 'x', FLOORS.r1, here, 'left', { ...DAY_1F, cut: 4, onCut: CH1.stairsCollapsed });
+const r1Stairs2 = (here) => stairs('제1연구동 계단2', 'y', FLOORS.r1b, here, 'right', { ...DAY_1F, lo: 4 });
+const r2Stairs = (here) => stairs('제2연구동', 'y', FLOORS.r2, here, 'left', DAY_1F);
+const r3Stairs = (here) => stairs('제3연구동', 'z', FLOORS.r3, here, 'left', DAY_1F);
 // 제2·3연구동 계단2: 복도 왼쪽 끝(1·2층은 동 구역의 왼쪽 벽). 1~6층 모두 닿는다
-const r2Stairs2 = (here) => stairs('제2연구동 계단2', 'g', FLOORS.r2, here, 'right');
-const r3Stairs2 = (here) => stairs('제3연구동 계단2', 'h', FLOORS.r3, here, 'right');
+const r2Stairs2 = (here) => stairs('제2연구동 계단2', 'g', FLOORS.r2, here, 'right', DAY_1F);
+const r3Stairs2 = (here) => stairs('제3연구동 계단2', 'h', FLOORS.r3, here, 'right', DAY_1F);
 
 // 연구지원동 북서동: 계단 둘과 엘리베이터 모두 지하 1층(주차장)까지 간다. here: 1~3층, 지하 1층은 -1
 const SUPA_BELOW = ['supA_b1'];
 const supABelowOpen = (c) => c.quest.started('ch1'); // 지하주차장은 1장이 시작된 뒤부터 (작가 지침 2026-10-05)
-const supAStairs = (n, anchor, here) => stairs(`연구지원동 북서동 계단${n}`, anchor, FLOORS.supA, here, 'right', { below: SUPA_BELOW, belowOpen: supABelowOpen });
+const supAStairs = (n, anchor, here) => stairs(`연구지원동 북서동 계단${n}`, anchor, FLOORS.supA, here, 'right', { ...DAY_1F, below: SUPA_BELOW, belowOpen: supABelowOpen });
 const supAElevator = (here) => elevator('연구지원동 북서동', 'e', FLOORS.supA, here, SUP_ELEVATOR, 'right', { below: SUPA_BELOW, belowOpen: supABelowOpen });
 
 export const MAPS = {
@@ -222,16 +230,16 @@ export const MAPS = {
       'F;;;;;;;;;;;;;;;T;;;::;;;;;;;;;;;;;;:::::::::;;;;;;;;;;;;;BB;;;;T;;;;;:::;F',
       'F;T;;T;;;;;;;;;;;;;;::;;;;T;;;;;;;;;:::::::::;;;;;T;;;;;;;BB;;;;;;;;;;:::;F',
       'F;;;;;;;;;;;T;;;;;;;::;;;;;;;T;;;;T;:::::::::;;;;;;;;T;;;;;;;;;;;;;;;;:::;F',
-      'F;;;;;;;;;;;;;;T;;;;::;;;;;;;;;;;;;;:::::::::;;;;;;;;;;;;;;;;;;;;;;;;;:::;F',
+      'F;;;;;;;;;;;;;;T;;;;::;;;;;;;;;;;;;;::::n::::;;;;;;;;;;;;;;;;;;;;;;;;;:::;F',
       'F;T;;;T;;;;;;;;;;;T;::::::::::::::::::::::::::;T;;;;;;;;;;T;;;T;;;;;T;:::;F',
       'F;;;;;;;;BB;;;;;;;;;::::::::::::::::::::::::::;;;;;;BB;;;;;;;;;;;;;;;;:::;F',
-      'F;;;;;;;;BB;;T;;;;;;::;;;;;;;;;;;;;;::*:::*::;;;;;;;BB;;;;;;;;;;;;;;;;:::;F',
+      'F;;;;;;;;BB;;T;;;;;;::;;;;;;;;;;;;;;::*:::*::;;;;;;;BB;;;;;;;;;;;;;;;;:m:;F',
       'F;;BB;;;;;;;;;;;;;;;::;;;;;;BB;;;;;;:::::::::;;;;;;;;;;;;;;;;;;;;BB;;;:::;F',
       'F;;BB;;;;;;;;;;;T;;;::;;;;;;BB;;T;;;:::::::::;;;T;;;;;;;T;;;;;T;;BB;;;:::;F',
       'F;;;;;;T;;;;;T;;;;;;::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;T;;;;;;;;;;;;;;;;:::;F',
       'F;;;;;;;;;;;;;;;;;;;::;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::;F',
-      'F;T;;;;;:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::;F',
-      'F;;;;;;;:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::;F',
+      'F;T;;;;;::::::::::::::::o::::::::::::::::::::::::::::::::::::::::::::::::;F',
+      'F;;;;;;;:::::::::::::::::::::::::::::::::::::::::::::::s:::::::::::::::::;F',
       'F;;;;;;;;;;;;;;;;;;;;;;;;;;;*;;;*;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHH;;;;;:::;F',
       'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHH;;;;;:::;F',
       'F;;;;;;;;;HHHHHHHHHHHHHHHHHHHHaHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;T;;;:::;F',
@@ -244,7 +252,7 @@ export const MAPS = {
       'F;;;;;;T;;HHHHHHHHHHHHHHHHHHHHjHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH;HHHH:::;F',
       'F;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHHHHH;HHHH:::;F',
       'F;;BB;;;;;;;:::::::::::::::::::::::::::::::::::::::::___________::HvHH::::F',
-      'F;;BB;;;;;;;:::::::::::::::::::::::::::::::::::::::::___________::::::::::F',
+      'F;;BB;;;;;;;:::::::::::::::::::::::t:::::::::::::::::___________::::::::::F',
       'F;;;;;;;;;;;:::::::::::::::::::::::::::::::::::::::::___________::::::::::F',
       'F;;;;;;;;;;;;;____________________________________________________________g',
       'F;;;;;T;;;T;;;___________________________________________***______________g',
@@ -267,7 +275,7 @@ export const MAPS = {
       'F;;;;;;;;;;;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;T;;;;;;;;;F',
       'F;;;;;;;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
       'F;;;;;;;;;;;||||||||||||||||::;T;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;BB;;;;F',
-      'F;;;;BB;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;T;;BB;;;;F',
+      'F;;;;BB;;;;;||||||||||||||||u:;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;T;;BB;;;;F',
       'F;;;;BB;;;;;||||||||||||||||::;;;;____;;;;;;;;;;;T;;HHHHHHH;;BB;;;;;;;;;T;F',
       'F;;;;;;;;;;;||||||||||||||||::;;;;____;;T;;;;;T;;;;;HHHHHHH;;BB;;;;;;;;;;;F',
       'F;;;;;;;;;;;||||||||||||||||::;T;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
@@ -290,7 +298,7 @@ export const MAPS = {
       'F;;T;;;;;;HHHHHHHHHHHHHHHHp;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;T;;;;;;;F',
       'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;T;;;;;T;;T;;HHHHHHH;;;;;;;;;;;;;;;F',
       'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;T;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
-      'F;;;;;T;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;T;;;;;;F',
+      'F;;;;;T;;;HHHHHHHHHHHHHHHHH;:w;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;T;;;;;;F',
       'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;T;;;;HHHHHHH;;T;;;;;;;;T;;;F',
       'F;;;;;;;;;HHHHHHHHHHHHHHHHH;::;;;;____;;;;;;;;;;;;;;HHHHHHH;;;;;;;;;;;;;;;F',
       'F;;T;;;T;;HHHHHHHHHHHHHHHHH;::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;T;;;;;;F',
@@ -325,7 +333,7 @@ export const MAPS = {
       'F________________;;HHHHHHHHHHHHHHHH;BB;;;;;;;T;;;;;;;;T;HHHHHHHHHHHHHHHH;;F',
       'F________________;;HHHHHHHHHHHHHHHr;BB;;T;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHH;;F',
       'F________________;;HHHHHHHHHHHHHHHH;;;;;;;;;;;;;T;;;;;;;HHHHHHHHHHHHHHHH;;F',
-      'F________________;;HHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHH;;F',
+      'F________________;;HHHHHHHHHHHHHHHH;;;;;;;;;;y;;;;;;;;;;HHHHHHHHHHHHHHHH;;F',
       'F________________;;HHHHHHHHHHHHHHHH;;;;;;;;;;;;;;;;;;;;;HHHHHHHHHHHHHHHH;;F',
       'F________________;;HHHHHHHHHHHHHHHH;;FFFFFFFF;FFFFFFFFF;HHHHHHHHHHHHHHHH;;F',
       'F________________;;HHHHHHHHHHHHHHHH;;F;;;;;;;;;;;;;;;;F;;;;;;;;;;;;;;;;;;;F',
@@ -354,11 +362,11 @@ export const MAPS = {
       v: { sprite: 'booth', solid: true, trigger: 'action', run: PROLOGUE.booth },  // 경비실
       a: entrance('glassDoor', 'main_1f', 'a', 'down'),       // 본관 북동문
       j: entrance('glassDoor', 'main_1f', 'j', 'up'),         // 본관 남서문
-      k: dayLocked(entrance('glassDoor', 'research_1f', 'n', 'down')),  // 제1연구동 북동문
-      b: dayLocked(entrance('glassDoor', 'research_1f', 'b', 'right')), // 제1연구동 북서문 (차도)
-      c: dayLocked(entrance('glassDoor', 'research_1f', 'c', 'right')), // 제2연구동 북서문 (차도)
-      d: dayLocked(entrance('glassDoor', 'research_1f', 'd', 'right')), // 제3연구동 북서문 (차도)
-      l: dayLocked(entrance('glassDoor', 'research_1f', 'u', 'up')),    // 제3연구동 남서문
+      k: entrance('glassDoor', 'research_1f', 'n', 'down'),  // 제1연구동 북동문
+      b: entrance('glassDoor', 'research_1f', 'b', 'right'), // 제1연구동 북서문 (차도)
+      c: entrance('glassDoor', 'research_1f', 'c', 'right'), // 제2연구동 북서문 (차도)
+      d: entrance('glassDoor', 'research_1f', 'd', 'right'), // 제3연구동 북서문 (차도)
+      l: entrance('glassDoor', 'research_1f', 'u', 'up'),    // 제3연구동 남서문
       p: dayLocked(entrance('door', 'polar_1f', 'o', 'right')),         // 극지지원동
       e: supADoor('o', 'down'),                                    // 연구지원동 북서동 — 북동쪽 출입문
       r: supADoor('r', 'left'),                                    // 연구지원동 북서동 — 남동쪽 출입문 (트인 공간 쪽)
@@ -367,6 +375,14 @@ export const MAPS = {
       x: creatureSpot('exampleBugOut'),                             // 소동물 예시 (바깥)
       q: dayLocked(entrance('gate', 'supA_b1', 's', 'left')),          // 지하주차장 입구 (연구지원동 북서동 지하 1층)
       i: look('gate', '(화물 입구 — 닫혀 있다. 문구 미정)'),            // 화물 입구 (하역장 쪽, 닫힘)
+      m: crowd('gateWalker'),      // 낮의 사람 — 정문 쪽 보도
+      n: crowd('plazaWalker'),     // 낮의 사람 — 북쪽 광장
+      o: crowd('pathWalkerW'),     // 낮의 사람 — 본관 북쪽 보도(서)
+      s: crowd('pathWalkerE'),     // 낮의 사람 — 본관 북쪽 보도(동)
+      t: crowd('mainSouth'),       // 낮의 사람 — 본관 남쪽 보도
+      u: crowd('researchPath'),    // 낮의 사람 — 연구동 앞 보도
+      w: crowd('researchPathS'),   // 낮의 사람 — 연구동 앞 보도(남)
+      y: crowd('supLawn'),         // 낮의 사람 — 연구지원동 앞 잔디
     },
   },
 
@@ -377,15 +393,15 @@ export const MAPS = {
     rows: [
       '##########a#############',
       '#......................w',
-      't......................#',
+      't...............d......#',
       '#...bbbbb..............h',
       '#...........r..........#',
-      '#.==g..................#',
+      '#c==g..............e...#',
       '#......................#',
       '##########j#############',
     ],
     events: {
-      w: stairs('본관', 'w', FLOORS.main, 1),
+      w: stairs('본관', 'w', FLOORS.main, 1, 'left', DAY_1F),
       h: door('glassDoor', 'exhibit', 'h', 'up'),
       r: { ...npc(STAFF.name, STAFF.color, PROLOGUE.meetStaff), visible: (s) => s.flags.pro === 1 },
       a: entrance('glassDoor', 'campus', 'a', 'up'),   // 북동문
@@ -393,6 +409,9 @@ export const MAPS = {
       b: look('panel', '(전시 패널 — 조사 텍스트)'),
       g: look('note', '(출입 신고소 — 조사 텍스트)'),
       t: door('wcDoor', 'wc_main_1f', 'o'), // 화장실
+      c: crowd('lobbyDesk'),       // 낮의 사람 — 출입 신고소 옆
+      d: crowd('lobbyWalker'),     // 낮의 사람 — 로비
+      e: crowd('lobbyTech'),       // 낮의 사람 — 로비
     },
   },
 
@@ -405,7 +424,7 @@ export const MAPS = {
       '#.u......aaa.#',
       '#............#',
       '#.dd....nn...#',
-      '#............#',
+      '#..b......c..#',
       '#............#',
       '######h#######',
     ],
@@ -415,6 +434,8 @@ export const MAPS = {
       a: look('bow', '(아라온호 뱃머리 구조물 — 조사 텍스트)'),
       d: look('drill', '(빙하 시추기 모형 — 조사 텍스트)'),
       n: look('penguin', '(펭귄 모형 — 조사 텍스트)'),
+      b: crowd('exhibitA'),        // 낮의 사람 — 시추기 모형 앞
+      c: crowd('exhibitB'),        // 낮의 사람 — 홍보관
     },
   },
 
@@ -425,7 +446,7 @@ export const MAPS = {
     rows: [
       '#####n####',
       '#........#',
-      '#........x',
+      '#...e....x',
       'b........#',
       '#........k',
       'w..r.....#',
@@ -433,7 +454,7 @@ export const MAPS = {
       '####..####',
       '#........#',
       'g........#',
-      '#........y',
+      '#....i...y',
       'c........#',
       '#........f',
       'v........q',
@@ -441,7 +462,7 @@ export const MAPS = {
       '####..####',
       '#........#',
       'h........#',
-      '#........z',
+      '#.....j..z',
       'd........#',
       '#........m',
       't........#',
@@ -452,12 +473,12 @@ export const MAPS = {
       x: r1Stairs(1),
       n: entrance('glassDoor', 'campus', 'k', 'up'),    // 북동문
       b: entrance('glassDoor', 'campus', 'b', 'left'),  // 북서문 (차도)
-      k: door('labDoor', 'nightlab', 'i', 'down'),
+      k: dayLocked(door('labDoor', 'nightlab', 'i', 'down')),  // 낮에는 연구실에 볼일이 없다
       // 제2연구동
       y: r2Stairs(1),
       g: r2Stairs2(1),
       c: entrance('glassDoor', 'campus', 'c', 'left'),  // 북서문 (차도)
-      f: door('freezerDoor', 'coldlab', 'f', 'down'),
+      f: dayLocked(door('freezerDoor', 'coldlab', 'f', 'down')),
       q: lockedRoom('전자현미경 분석실'),
       // 제3연구동
       z: r3Stairs(1),
@@ -469,6 +490,9 @@ export const MAPS = {
       w: door('wcDoor', 'wc_r1_1f', 'o'), // 제1연구동 화장실
       v: door('wcDoor', 'wc_r2_1f', 'o'), // 제2연구동 화장실
       t: door('wcDoor', 'wc_r3_1f', 'o'), // 제3연구동 화장실
+      e: crowd('r1fWalker'),       // 낮의 사람 — 제1연구동 복도
+      i: crowd('r1fTech'),         // 낮의 사람 — 제2연구동 복도
+      j: crowd('r1fReader'),       // 낮의 사람 — 제3연구동 복도
     },
   },
 
@@ -799,7 +823,7 @@ export const MAPS = {
       '####...####',
       '####...####',
       '####...####',
-      '####...####',
+      '####.f.####',
       '####...####',
       '####...####',
       '####...####',
@@ -816,14 +840,14 @@ export const MAPS = {
       '####...####',
       '####...####',
       '####...####',
-      '#.........#',
+      '#.......b.#',
       '#......=k=#',
       '#.........#',
       '#.==..==..#',
       '#......t..#',
-      '#.........#',
+      '#..c..g...#',
       '#.==..==..#',
-      '#.........#',
+      '#..d......#',
       '#.........#',
       '###########',
     ],
@@ -833,13 +857,18 @@ export const MAPS = {
       y: supAStairs(2, 'y', 1),
       x: supAStairs(1, 'x', 1),
       e: supAElevator(1),
-      w: door('wcDoor', 'supA_wc', 'o', 'down'),
+      w: { ...door('wcDoor', 'supA_wc', 'o', 'down'), run: (c) => (PROLOGUE.escorting(c) ? PROLOGUE.staffStop(c) : c.transfer('supA_wc', 'o', 'down')) }, // 카페에 앉기 전에는 직원이 막음
       h: { sprite: 'fireBox', solid: true, trigger: 'action', run: CH1.fireBox }, // 소방함 — 비상용 손전등
       k: { sprite: 'register', solid: true, trigger: 'action', run: PROLOGUE.cafeCounter },
       t: {
         ...npc(STAFF.name, STAFF.color, (c) => c.say('(자리에서 기다리는 중 — 대사 미정)', STAFF.name)),
         dir: 'up', visible: (s) => s.flags.pro === 4,
       },
+      f: crowd('supCorridor'),     // 낮의 사람 — 복도
+      b: crowd('barista'),         // 낮의 사람 — 카페 카운터 안쪽
+      c: crowd('cafeChatA'),       // 낮의 사람 — 카페 탁자
+      d: crowd('cafeChatB'),       // 낮의 사람 — 카페 탁자 맞은편
+      g: crowd('cafeSolo'),        // 낮의 사람 — 카페 탁자
     },
   },
   supA_wc: {

@@ -1,8 +1,8 @@
-import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.30.0';
-import { ITEMS } from './data/items.js?v=0.30.0';
-import { lookFor } from './data/looks.js?v=0.30.0';
-import { SOLID_TILES as SOLID } from './world.js?v=0.30.0';
-import { isExplored } from './state.js?v=0.30.0';
+import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.31.0';
+import { ITEMS } from './data/items.js?v=0.31.0';
+import { lookFor } from './data/looks.js?v=0.31.0';
+import { SOLID_TILES as SOLID } from './world.js?v=0.31.0';
+import { isExplored } from './state.js?v=0.31.0';
 
 export const FONT = '18px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
 export const SMALL_FONT = '14px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
@@ -1219,9 +1219,9 @@ export function drawBubbles(ctx, bubbles, cam, t) {
     const lines = wrapBubble(ctx, b.text, 170);
     const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 14;
     const h = lines.length * 16 + 8;
-    const cx = Math.round(b.who.px * T - cam.x + T / 2);
+    const cx = Math.round((b.who.px ?? b.who.x) * T - cam.x + T / 2); // 서 있는 NPC(이벤트)는 px가 없다
     const x = Math.max(4, Math.min(SCREEN_W - w - 4, cx - w / 2));
-    const y = Math.max(4, Math.round(b.who.py * T - cam.y) - h - 8);
+    const y = Math.max(4, Math.round((b.who.py ?? b.who.y) * T - cam.y) - h - 8);
     ctx.fillStyle = 'rgba(250, 250, 245, 0.95)';
     ctx.strokeStyle = '#2a2f3a';
     ctx.lineWidth = 1;

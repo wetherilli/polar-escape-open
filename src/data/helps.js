@@ -24,7 +24,7 @@ export const HELPS = {
   // 예시 — 대학원생 A의 예시 퀘스트를 끝내면 받는다(npcs.js). 실제 도움을 정하면 지운다
   exampleHelp: {
     name: '(도움 예시 — 방한 요령)',
-    from: '(대학원생 A)',
+    from: '청현',
     desc: '(냉동실험실에서 체온이 절반 속도로 줄어든다 — 문구 미정)',
     effects: { cold: 0.5 },
   },

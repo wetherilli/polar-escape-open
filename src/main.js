@@ -1,24 +1,24 @@
-import { TILE, DIRS, MOVE_SPEED, RUN_SPEED, STAMINA_DRAIN, STAMINA_REGEN, STAMINA_RECOVER } from './config.js?v=0.30.0';
-import { Chaser, farthestTile, randomFloor } from './chase.js?v=0.30.0';
-import { sfx, bgm, volume, setVolume } from './audio.js?v=0.30.0';
-import { input } from './input.js?v=0.30.0';
-import { state, resetState, readSave, readAllSaves, hasAnySave, latestSlot, applySave, hasItem, curseEnv, helpMult, revealAround } from './state.js?v=0.30.0';
-import { World } from './world.js?v=0.30.0';
-import { Player, Follower } from './player.js?v=0.30.0';
-import { Dialog } from './dialog.js?v=0.30.0';
-import { Menu } from './menu.js?v=0.30.0';
-import { QUESTS } from './data/quests.js?v=0.30.0';
-import { ITEMS } from './data/items.js?v=0.30.0';
-import { guideTarget } from './guide.js?v=0.30.0';
-import { prefs, setPref } from './prefs.js?v=0.30.0';
-import { setupTouch, syncTouch } from './touch.js?v=0.30.0';
-import { fader } from './fader.js?v=0.30.0';
-import { createRunner } from './events.js?v=0.30.0';
-import { resetShark } from './data/shark.js?v=0.30.0';
-import { START, MAPS } from './data/maps.js?v=0.30.0';
-import { ENDINGS } from './data/endings.js?v=0.30.0';
-import { PATCH, VERSION } from './data/patch.js?v=0.30.0';
-import { camera, drawWorld, drawLighting, drawHUD, drawTitle, drawEnding, drawPicture, drawToast, drawChaseBorder, drawChaserGlow, drawGameOver, drawBubbles, drawSettings, GEAR_BUTTON, drawSlots, SLOT_BOX, drawGuideArrow } from './render.js?v=0.30.0';
+import { TILE, DIRS, MOVE_SPEED, RUN_SPEED, STAMINA_DRAIN, STAMINA_REGEN, STAMINA_RECOVER } from './config.js?v=0.31.0';
+import { Chaser, farthestTile, randomFloor } from './chase.js?v=0.31.0';
+import { sfx, bgm, volume, setVolume } from './audio.js?v=0.31.0';
+import { input } from './input.js?v=0.31.0';
+import { state, resetState, readSave, readAllSaves, hasAnySave, latestSlot, applySave, hasItem, curseEnv, helpMult, revealAround } from './state.js?v=0.31.0';
+import { World, FLOOR_TILES } from './world.js?v=0.31.0';
+import { Player, Follower } from './player.js?v=0.31.0';
+import { Dialog } from './dialog.js?v=0.31.0';
+import { Menu } from './menu.js?v=0.31.0';
+import { QUESTS } from './data/quests.js?v=0.31.0';
+import { ITEMS } from './data/items.js?v=0.31.0';
+import { guideTarget } from './guide.js?v=0.31.0';
+import { prefs, setPref } from './prefs.js?v=0.31.0';
+import { setupTouch, syncTouch } from './touch.js?v=0.31.0';
+import { fader } from './fader.js?v=0.31.0';
+import { createRunner } from './events.js?v=0.31.0';
+import { resetShark } from './data/shark.js?v=0.31.0';
+import { START, MAPS } from './data/maps.js?v=0.31.0';
+import { ENDINGS } from './data/endings.js?v=0.31.0';
+import { PATCH, VERSION } from './data/patch.js?v=0.31.0';
+import { camera, drawWorld, drawLighting, drawHUD, drawTitle, drawEnding, drawPicture, drawToast, drawChaseBorder, drawChaserGlow, drawGameOver, drawBubbles, drawSettings, GEAR_BUTTON, drawSlots, SLOT_BOX, drawGuideArrow } from './render.js?v=0.31.0';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -91,11 +91,12 @@ const game = {
   //  맵을 다시 들어오면 원래 자리로 돌아간다(이벤트 위치는 맵을 불러올 때마다 새로 정해짐)
   eventMoves: [],
   stopEventMoves() { this.eventMoves.forEach((m) => m.resolve()); this.eventMoves = []; },
-  moveEvent(id, dir, steps) {
+  //  speed = 초당 칸 수(빼면 NPC_SPEED). 돌아다니기(wander)는 느리게 걷는다
+  moveEvent(id, dir, steps, speed) {
     const ev = this.world.events.find((e) => e.id === id);
     if (!ev || steps <= 0) return Promise.resolve();
     ev.dir = dir;
-    return new Promise((resolve) => this.eventMoves.push({ ev, dir, left: steps, t: 1, resolve }));
+    return new Promise((resolve) => this.eventMoves.push({ ev, dir, left: steps, t: 1, speed, resolve }));
   },
 
   // ── 화면 번쩍임 (c.flash) ──
@@ -254,6 +255,7 @@ function updatePlay(dt) {
   exploreHere();
   if (game.toasts.length && (game.toasts[0].t += dt) > TOAST_TIME) game.toasts.shift();
   updateBubbles();
+  updateWander();
   if (game.eventMoves.length) updateEventMoves(dt);
   if (game.settings) return updateSettings(); // 메뉴의 설정 탭에서 연 설정 화면 (시간이 멈춘다)
   if (game.dialog.active) return game.dialog.update(dt, input);
@@ -309,13 +311,14 @@ function updateEventMoves(dt) {
   game.eventMoves = game.eventMoves.filter((m) => {
     const ev = m.ev;
     if (m.t < 1) {
-      m.t = Math.min(1, m.t + dt * NPC_SPEED);
+      m.t = Math.min(1, m.t + dt * (m.speed ?? NPC_SPEED));
       ev.px = ev.fx + (ev.x - ev.fx) * m.t;
       ev.py = ev.fy + (ev.y - ev.fy) * m.t;
       if (m.t < 1) return true;
     }
     const d = DIRS[m.dir], nx = ev.x + d.x, ny = ev.y + d.y;
-    const blocked = game.world.isBlocked(nx, ny) || (game.player.x === nx && game.player.y === ny);
+    const f = game.follower;
+    const blocked = game.world.isBlocked(nx, ny) || (game.player.x === nx && game.player.y === ny) || (f && f.x === nx && f.y === ny);
     if (m.left <= 0 || blocked) {
       delete ev.px; delete ev.py;
       m.resolve();
@@ -326,6 +329,46 @@ function updateEventMoves(dt) {
     m.left--; m.t = 0;
     return true;
   });
+}
+
+// NPC 돌아다니기: wander: { radius(칸, 기본 3), speed(초당 칸, 기본 1.2), pause: [최소, 최대](초, 기본 [2, 5]) }
+//  처음 선 자리에서 radius칸 안을 한 칸씩 천천히 걷고 잠깐 쉰다. 처음 선 칸과 같은 바닥(보도면 보도, 잔디면 잔디)만 밟고,
+//  다른 이벤트 칸(보이지 않는 것 포함 — 문·나중에 나타날 사람 자리)은 밟지 않는다.
+//  플레이어가 두 칸 안에 오면 멈춰 선다(말을 걸기 쉽게). 대화·이벤트·메뉴 중에는 새로 걷지 않는다.
+const WANDER_DIRS = ['up', 'down', 'left', 'right'];
+// 이벤트 칸은 불러올 때 '.'로 바뀌므로, 선 자리의 바닥은 둘레 칸에서 가장 많은 바닥으로 본다
+function homeTile(w, x, y) {
+  const n = {};
+  for (const d of WANDER_DIRS) {
+    const t = w.tileAt(x + DIRS[d].x, y + DIRS[d].y);
+    if (FLOOR_TILES.has(t)) n[t] = (n[t] ?? 0) + 1;
+  }
+  return Object.keys(n).sort((a, b) => n[b] - n[a])[0] ?? '.';
+}
+function updateWander() {
+  if (runner.busy || game.dialog.active || game.menu.open || game.autoMove) return;
+  const w = game.world, p = game.player, f = game.follower;
+  for (const ev of w.visibleEvents()) {
+    if (!ev.wander || ev.px !== undefined) continue; // 걷는 중
+    const o = ev.wander;
+    ev.home ??= { x: ev.x, y: ev.y, tile: homeTile(w, ev.x, ev.y) };
+    const [lo, hi] = o.pause ?? [2, 5];
+    ev.wanderAt ??= game.time + lo + Math.random() * (hi - lo);
+    if (game.time < ev.wanderAt) continue;
+    ev.wanderAt = game.time + lo + Math.random() * (hi - lo);
+    if (Math.abs(ev.x - p.x) + Math.abs(ev.y - p.y) <= 2) continue;
+    const r = o.radius ?? 3;
+    const ok = WANDER_DIRS.filter((d) => {
+      const nx = ev.x + DIRS[d].x, ny = ev.y + DIRS[d].y;
+      return Math.abs(nx - ev.home.x) + Math.abs(ny - ev.home.y) <= r
+        && (w.tileAt(nx, ny) === ev.home.tile || (nx === ev.home.x && ny === ev.home.y)) && !w.isBlocked(nx, ny)
+        && !w.events.some((e) => e !== ev && e.x === nx && e.y === ny)
+        && !(p.x === nx && p.y === ny) && !(f && f.x === nx && f.y === ny);
+    });
+    if (!ok.length) continue;
+    const dir = ok[Math.floor(Math.random() * ok.length)];
+    game.moveEvent(ev.id, dir, 1 + Math.floor(Math.random() * 2), o.speed ?? 1.2);
+  }
 }
 
 // 이벤트가 시킨 걷기: 문·이벤트를 건드리지 않고 정해진 칸 수만큼 걷는다

@@ -45,9 +45,9 @@ export const CH1 = {
 
   // 화장실 문 옆 소방함 — 비상용 손전등
   async fireBox(c) {
-    if (c.flag('day')) return c.say('(소방함 — 조사 텍스트)');
-    if (c.has('flashlight')) return c.say('(소방함 — 손전등을 꺼낸 뒤. 문구 미정)');
-    await c.say('(소방함을 열어 비상용 손전등을 꺼냄 — 대사 미정)');
+    if (c.flag('day')) return c.say('손전등 정도는 유용하게 쓸 수 있을 것 같다.');
+    if (c.has('flashlight')) return c.say('다른 물건들은 필요없을 것 같다.');
+    await c.say('손전등은 쓸만해 보인다.');
     await c.give('flashlight');
     c.flag('flashlightOn', true); // 꺼낸 손전등은 켜진 채로 (L로 끄고 켠다)
     c.objective(null); // 목표 줄을 1장 퀘스트로 돌려놓는다
@@ -56,14 +56,14 @@ export const CH1 = {
   // 306호에 들어섬 — 렐의 자리는 비어 있고 캠벨만 있다 (0 → 1)
   async enter306(c) {
     if (c.quest.stage('ch1') !== 0) return;
-    await c.say('(306호 — 렐은 자리에 없고 캠벨만 있다. 대사 미정)');
+    await c.say('렐은 자리에 없고 캠벨만 있다.');
     c.quest.next('ch1');
   },
 
   // 연구지원동 2층 회의실의 번역기 (사이드 퀘스트 'translator')
   async findTranslator(c) {
     if (c.quest.finished('translator')) return;
-    await c.say('(회의실에서 번역기를 찾음 — 대사 미정)');
+    await c.say('이제 캠벨의 말을 번역해볼 수 있을 것 같다.');
     await c.give('translator');
     if (!c.quest.started('translator')) c.quest.start('translator');
     c.quest.done('translator');
@@ -72,8 +72,8 @@ export const CH1 = {
   // 306호에서 캠벨을 처음 만남
   async meetCampbell(c) {
     if (!c.quest.started('ch1')) c.quest.start('ch1');
-    await campbell(c, '(First meeting — Campbell\'s lines in English, TBD)', '(한국어 자막 — 미정)');
-    await c.say('(수오 반응 — 대사 미정)', '수오');
+    await campbell(c, 'Huh, who are you?', '엇, 누구세요?');
+    await c.say('저는 렐을 만나러 왔는데... 자리에 없나요?', '수오');
     c.note.add('campbell'); // 노트 「대학원생 — Campbell」
     if (!c.quest.started('translator')) c.quest.start('translator'); // 영어라 알아듣기 어렵다 → 사이드 퀘스트 「번역기 찾기」
     if (c.quest.stage('ch1') === 0) c.quest.next('ch1');
@@ -81,10 +81,10 @@ export const CH1 = {
 
   // 렐의 행방 묻기. 물었으면 true
   async askAboutRel(c) {
-    const pick = await c.choose('(무엇을 물을까 — 문구 미정)', ['렐에 대해 묻는다', '그만둔다']);
+    const pick = await c.choose('무엇을 물을까', ['렐에 대해 묻는다', '그만둔다']);
     if (pick !== 0) return false;
-    await c.say('(렐을 찾고 있다고 말함 — 대사 미정)', '수오');
-    await campbell(c, '(Campbell tells where Rel might be — English TBD)', '(한국어 자막 — 미정)');
+    await c.say('어... 아임 히얼 투 파인드 렐...', '수오');
+    await campbell(c, 'Ah, Rell? Rell is probably in the Microscopy Room. The Microscopy Room is on the 6th floor of Research Building 1.', '아 렐 말이야? 렐은 아마도 현미경실에 있을거야. 현미경실은 제1연구동 6층에 있어.');
     c.quest.next('ch1');
     return true;
   },
@@ -92,21 +92,21 @@ export const CH1 = {
   // 연구동 1층에 들어섬
   async enterResearch(c) {
     if (c.quest.stage('ch1') !== 2) return;
-    await c.say('(연구동에 들어섬 — 대사 미정)');
+    await c.say('연구동에 들어서니 더 어둡고 춥게 느껴진다.');
     c.quest.next('ch1');
   },
 
   // 제1연구동 계단 — 4층과 5층 사이가 무너져 있음 (stairs의 onBroken)
   async stairsCollapsed(c) {
     if (c.quest.stage('ch1') !== 3) return;
-    await c.say('(무너진 계단을 보고 다른 길을 찾기로 함 — 대사 미정)', '수오');
+    await c.say('이쪽 계단은 무너져있네. 다른 길을 찾아봐야겠다.', '수오');
     c.quest.next('ch1');
   },
 
   // 6층 광학현미경실에 들어섬
   async reachOptics(c) {
     if (!c.quest.active('ch1')) return;
-    await c.say('(광학현미경실 — 장면 미정)');
+    await c.say('텅 비어 있다. 컴퓨터 하나만 켜져있다.');
     c.quest.done('ch1');
   },
 };
