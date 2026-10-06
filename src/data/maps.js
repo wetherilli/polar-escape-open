@@ -24,6 +24,7 @@
 //  night    밤 겹침층 — rows와 같은 크기의 줄. 공백 = 낮과 같음, 다른 글자 = 밤(본편)에만 그 타일(무너진 잔해 X 등).
 //           이벤트 칸은 바꾸지 않는다. 금·파손·패인 도로는 render.js DAMAGE가 저절로 그린다. 편집기 「밤 칸」으로 칠한다
 //  litWindows [[x, y], …] 밤에 불이 켜진 외벽(H) 칸 — 야근 중인 방. 나머지 창은 모두 꺼져 있다
+//  creatureSpots { where, ground, tree, flying, wall, rubble, puddle, observe } 무작위 소동물 채집 자리 수, observe: true면 관찰 동물(새·너구리·고양이)도 — 맵에 들어올 때마다 새로 정한다(src/spots.js)
 //  overhead [[x, y, w, h], …] 위층 덮개 칸 — 사람 위에 반투명하게 그린다(구름다리 등). 필로티 P 칸은 저절로 덮인다
 //
 // 이벤트 필드
@@ -45,16 +46,17 @@
 //              (도착 칸 = 앵커 칸에서 그 방향으로 한 칸)
 // ─────────────────────────────────────────────
 
-import { PROLOGUE, PROLOGUE_START, STAFF } from './prologue.js?v=0.32.0';
-import { NPCS, EXAMPLE_ITEM } from './npcs.js?v=0.32.0';
-import { crowd } from './crowd.js?v=0.32.0';
-import { CH1 } from './chapter1.js?v=0.32.0';
-import { SHARK } from './shark.js?v=0.32.0';
-import { CREATURES } from './creatures.js?v=0.32.0';
-import { ITEMS } from './items.js?v=0.32.0';
-import { josa } from '../text.js?v=0.32.0';
-import { pickEnding } from './endings.js?v=0.32.0';
-import { helpTags } from '../state.js?v=0.32.0';
+import { PROLOGUE, PROLOGUE_START, STAFF } from './prologue.js?v=0.37.0';
+import { NPCS, EXAMPLE_ITEM } from './npcs.js?v=0.37.0';
+import { crowd } from './crowd.js?v=0.37.0';
+import { CH1 } from './chapter1.js?v=0.37.0';
+import { SHARK } from './shark.js?v=0.37.0';
+import { LAB305 } from './lab305.js?v=0.37.0';
+import { CREATURES, toolsOf } from './creatures.js?v=0.37.0';
+import { ITEMS } from './items.js?v=0.37.0';
+import { josa } from '../text.js?v=0.37.0';
+import { pickEnding } from './endings.js?v=0.37.0';
+import { helpTags } from '../state.js?v=0.37.0';
 
 export const START = PROLOGUE_START;
 
@@ -110,15 +112,15 @@ const creatureSpot = (id, { sprite = 'critter', fixture = false } = {}) => ({
   sprite, solid: true, trigger: 'action', creature: id,
   visible: (s) => !s.flags.day && (fixture || !s.creatures[id]),
   async run(c) {
-    if (c.creature.status(id)) return c.say('(비어 있다 — 문구 미정)');
+    if (c.creature.status(id)) return c.say('비어 있다.');
     if (!c.creature.toolFor(id)) {
-      const need = CREATURES[id].tools.map((t) => ITEMS[t].name).join(' 또는 ');
-      return c.say(`(무언가 움직인다. 잡으려면 ${need}${josa(need, '이', '가')} 필요하다 — 문구 미정)`);
+      const need = toolsOf(id).map((t) => ITEMS[t].name).join(' 또는 ');
+      return c.say(`무언가 움직인다. 잡으려면 ${need}${josa(need, '이', '가')} 필요하다.`);
     }
-    const pick = await c.choose('(무언가 움직인다 — 문구 미정)', ['잡는다', '그만둔다']);
+    const pick = await c.choose('무언가 움직인다.', ['잡는다', '그만둔다']);
     if (pick !== 0) return;
     c.creature.catch(id);
-    await c.say(`(${CREATURES[id].name} — 잡았다. 문구 미정)`);
+    await c.say(`${CREATURES[id].name}${josa(CREATURES[id].name, '을', '를')} 잡았다!`);
   },
 });
 // 세이브 포인트 (불 켜진 방에 둔다)
@@ -226,6 +228,7 @@ export const MAPS = {
   campus: {
     name: '극지연구소 (야외)',
     litWindows: [[33, 96], [44, 46]], // 밤에 불 켜진 창: 연구지원동 북서동 북동쪽 끝(306호 쪽) · 제1연구동
+    creatureSpots: { where: 'outside', ground: 10, tree: 8, flying: 5, wall: 4, rubble: 6, puddle: 5, observe: true }, // 무작위 채집 자리·관찰 동물 — 들어올 때마다 새로 (src/spots.js)
     overhead: [[35, 102, 2, 2]], // 위층 덮개: 연구지원동 두 동 사이 2층 구름다리 (필로티 P는 저절로 덮인다)
     rows: [
       'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF',
@@ -273,7 +276,7 @@ export const MAPS = {
       'F;;;;;;;;T;;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;T;;;;;;;F',
       'F;;;;;;;;;;;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;BB;F',
       'F;;;;;;;;;;;||||||||||||||||::PPPPPPPPbHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;BB;F',
-      'F;;;;x;T;;;;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;T;;;;;;;;;F',
+      'F;;;;;;T;;;;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;T;;;;;;;;;F',
       'F;;;;;;;;;;;________________::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;;;;;F',
       'F;;;;;;;;;;;________________::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;T;;;;;;F',
       'F;;;;T;;;;T;||||||||||||||||::PPPPPPPPHHHHHHHHHHHHHHHHHHHHHHHHH;;;;;;;T;;;F',
@@ -377,7 +380,6 @@ export const MAPS = {
       r: supADoor('r', 'left'),                                    // 연구지원동 북서동 — 남동쪽 출입문 (트인 공간 쪽)
       f: dayLocked(entrance('door', 'supB_1f', 'o', 'right')),          // 연구지원동 남동동
       h: dayLocked(entrance('door', 'dorm_1f', 'o', 'up')),             // 기숙사동
-      x: creatureSpot('exampleBugOut'),                             // 소동물 예시 (바깥)
       q: dayLocked(entrance('gate', 'supA_b1', 's', 'left')),          // 지하주차장 입구 (연구지원동 북서동 지하 1층)
       i: look('gate', '(화물 입구 — 닫혀 있다. 문구 미정)'),            // 화물 입구 (하역장 쪽, 닫힘)
       m: crowd('gateWalker'),      // 낮의 사람 — 정문 쪽 보도
@@ -454,7 +456,7 @@ export const MAPS = {
       '#...e....x',
       'b........#',
       '#........k',
-      'w..r.....#',
+      'w........#',
       '#........#',
       '####..####',
       '#........#',
@@ -491,7 +493,6 @@ export const MAPS = {
       d: entrance('glassDoor', 'campus', 'd', 'left'),  // 북서문 (차도)
       u: entrance('glassDoor', 'campus', 'l', 'down'),  // 남서문
       m: lockedRoom('운석보관 클린룸'),
-      r: creatureSpot('exampleBugIn'), // 소동물 예시 (안)
       w: door('wcDoor', 'wc_r1_1f', 'o'), // 제1연구동 화장실
       v: door('wcDoor', 'wc_r2_1f', 'o'), // 제2연구동 화장실
       t: door('wcDoor', 'wc_r3_1f', 'o'), // 제3연구동 화장실
@@ -510,7 +511,7 @@ export const MAPS = {
       'b........#',
       '#........w',
       'W........#',
-      '#...a....#',
+      '#........#',
       '#........#',
       '####..####',
       'c........#',
@@ -547,7 +548,6 @@ export const MAPS = {
       p: lockedRoom('제1연구동 2층 방'),
       q: lockedRoom('제2연구동 2층 방'),
       r: lockedRoom('제3연구동 2층 방'),
-      a: creatureSpot('exampleFish', { sprite: 'tank', fixture: true }), // 소동물 예시 (수조)
       b: door('wcDoor', 'wc_main_2f', 'o'), // 본관 화장실
       c: door('wcDoor', 'wc_r1_2f', 'o'), // 제1연구동 화장실
       d: door('wcDoor', 'wc_r2_2f', 'o'), // 제2연구동 화장실
@@ -665,12 +665,13 @@ export const MAPS = {
       '#........#',
       '#.GG..GG.#',
       '#........#',
-      '#.==..==.#',
+      '#.=m..==.#',
       '#........#',
       '#####o####',
     ],
     events: {
       o: door('labDoor', 'r1_6f', 'o', 'down'),
+      m: { sprite: 'microscope', solid: true, trigger: 'action', run: LAB305.microscope }, // 현미경 — 시료를 들여다본다 (305호와 같다)
     },
   },
 
@@ -1403,24 +1404,34 @@ export const MAPS = {
     },
   },
 
-  // ── 305호 화석연구실 (v0.20.0) — 3층 복도 오른쪽, 문 둘(앞문 m ↔ o, 뒷문 n ↔ p). 안쪽 배치는 임시 ──
+  // ── 305호 화석연구실 — 3층 복도 오른쪽, 문 둘(앞문 m ↔ o, 뒷문 n ↔ p). 작가 설계 2026-10-06, 장면은 lab305.js ──
+  //  위(앞문): 현미경 테이블 · 가재 수조 / 아래(뒷문): 화석이 가득한 창고 — 선반을 뒤지면 카메라·시료병.
+  //  두 공간은 벽으로 나뉘어 안에서는 오갈 수 없다(문마다 따로 들어간다)
   supA_305: {
     name: '305호 화석연구실',
     rows: [
-      '#########',
-      '#RRRRkRR#',
-      'o.......#',
-      '#.==.==.#',
-      '#.......#',
-      '#.==.==.#',
-      'p.......#',
-      '#GG..RRR#',
-      '#########',
+      '###########',
+      '#RR.t.RRRR#',
+      'o.........#',
+      '#..=u===..#',
+      '#..=====..#',
+      '#.........#',
+      '###########',
+      '#aaaaacaaa#',
+      'p.........#',
+      '#.aa.ab.a.#',
+      '#.........#',
+      '#aaa.aaaaa#',
+      '###########',
     ],
     events: {
       o: door('labDoor', 'supA_3f', 'm'),
       p: door('labDoor', 'supA_3f', 'n'),
-      k: look('note', '(화석 표본 — 조사 텍스트)'),
+      u: { sprite: 'microscope', solid: true, trigger: 'action', run: LAB305.microscope }, // 현미경 (테이블 위)
+      t: { sprite: 'crayfishTank', solid: true, trigger: 'action', run: LAB305.tank },     // 수조 — 붉은발남방가재
+      a: { sprite: 'fossilShelf', solid: true, trigger: 'action', run: LAB305.shelf },     // 화석 선반
+      c: { sprite: 'fossilShelf', solid: true, trigger: 'action', run: LAB305.cameraShelf }, // 선반 — 카메라
+      b: { sprite: 'fossilShelf', solid: true, trigger: 'action', run: LAB305.vialShelf },  // 선반 — 시료병 5개
     },
   },
 

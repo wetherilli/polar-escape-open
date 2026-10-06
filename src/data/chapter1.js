@@ -79,14 +79,11 @@ export const CH1 = {
     if (c.quest.stage('ch1') === 0) c.quest.next('ch1');
   },
 
-  // 렐의 행방 묻기. 물었으면 true
+  // 렐의 행방 묻기 — 캠벨 대화 선택지 「렐에 대해 묻는다」(npcs.js, 1장 1단계에만 나온다)
   async askAboutRel(c) {
-    const pick = await c.choose('무엇을 물을까', ['렐에 대해 묻는다', '그만둔다']);
-    if (pick !== 0) return false;
     await c.say('어... 아임 히얼 투 파인드 렐...', '수오');
     await campbell(c, 'Ah, Rell? Rell is probably in the Microscopy Room. The Microscopy Room is on the 6th floor of Research Building 1.', '아 렐 말이야? 렐은 아마도 현미경실에 있을거야. 현미경실은 제1연구동 6층에 있어.');
     c.quest.next('ch1');
-    return true;
   },
 
   // 연구동 1층에 들어섬

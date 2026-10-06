@@ -1,8 +1,8 @@
-import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.32.0';
-import { ITEMS } from './data/items.js?v=0.32.0';
-import { lookFor } from './data/looks.js?v=0.32.0';
-import { SOLID_TILES as SOLID } from './world.js?v=0.32.0';
-import { isExplored } from './state.js?v=0.32.0';
+import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.37.0';
+import { ITEMS } from './data/items.js?v=0.37.0';
+import { lookFor } from './data/looks.js?v=0.37.0';
+import { SOLID_TILES as SOLID } from './world.js?v=0.37.0';
+import { isExplored } from './state.js?v=0.37.0';
 
 export const FONT = '18px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
 export const SMALL_FONT = '14px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
@@ -195,6 +195,60 @@ const PIXEL_TILES = {
     }
   },
   // 선반: 철제 틀 + 세 칸, 칸마다 바인더·상자
+  // 화석 선반 (305호 창고): 선반 틀 + 암모나이트 · 뼈 · 삼엽충 박힌 돌판 · 라벨 붙은 표본 상자
+  fossilShelf(g, n, r) {
+    PIXEL_TILES.floor(g, n, r);
+    const frame = ['#6d7682', '#262b33'][n];
+    const bone = ['#e6dcc4', '#4d4a42'][n], boneDark = ['#b9ab8c', '#38352f'][n];
+    const stone = ['#9c9384', '#34312c'][n], stoneDark = ['#7d7466', '#2a2824'][n];
+    rect(g, ['#3d434c', '#15181d'][n], 2, 2, 28, 26); // 안쪽 그늘
+    rect(g, frame, 1, 1, 2, 28); rect(g, frame, 29, 1, 2, 28);
+    for (let s = 0; s < 3; s++) {
+      const top = 3 + s * 9, base = top + 7;
+      rect(g, frame, 1, base, 30, 2); // 선반 판
+      let x = 4;
+      while (x < 26) {
+        const kind = Math.floor(r(x, s, 2) * 4);
+        if (kind === 0) { // 암모나이트: 둥근 껍데기 + 나선 홈
+          rect(g, stone, x, base - 5, 5, 5); rect(g, stoneDark, x + 1, base - 4, 3, 3); rect(g, stone, x + 2, base - 3, 1, 1);
+          x += 6;
+        } else if (kind === 1) { // 뼈 한 토막: 양 끝이 볼록
+          rect(g, bone, x, base - 3, 7, 2); rect(g, bone, x, base - 4, 2, 4); rect(g, bone, x + 5, base - 4, 2, 4);
+          rect(g, boneDark, x + 2, base - 2, 3, 1);
+          x += 8;
+        } else if (kind === 2) { // 삼엽충이 박힌 돌판
+          rect(g, stone, x, base - 4, 6, 4); rect(g, stoneDark, x + 2, base - 4, 2, 3); rect(g, stoneDark, x + 1, base - 3, 4, 1);
+          x += 7;
+        } else { // 라벨 붙은 표본 상자
+          const w = Math.min(7, 26 - x);
+          rect(g, ['#b99c73', '#3e3426'][n], x, top + 2, w, 5); rect(g, ['#efece4', '#55534e'][n], x + 1, top + 3, Math.max(1, w - 3), 2);
+          x += w + 1;
+        }
+      }
+    }
+    rect(g, 'rgba(0,0,0,0.25)', 1, 29, 30, 2);
+  },
+  // 현미경 테이블 (305호): 책상 상판 위에 광학현미경 한 대
+  microscope(g, n, r) {
+    PIXEL_TILES.floor(g, n, r);
+    rect(g, 'rgba(0,0,0,0.25)', 2, 26, 29, 4); // 그림자
+    // 상판·앞면·다리는 책상(desk)과 같은 나무 — 옆 책상 칸과 이어 보인다
+    rect(g, ['#8a6a4c', '#3a2d22'][n], 1, 5, 30, 18);
+    for (let k = 0; k < 5; k++) rect(g, ['#7d5f43', '#33281e'][n], 2, 7 + k * 3, 28, 1);
+    rect(g, ['#a3825f', '#45372a'][n], 1, 5, 30, 1);
+    rect(g, ['#5e4632', '#261d16'][n], 1, 23, 30, 4);
+    rect(g, ['#4c3828', '#1d1611'][n], 3, 27, 2, 2); rect(g, ['#4c3828', '#1d1611'][n], 27, 27, 2, 2);
+    const body = ['#f2f2ee', '#55575b'][n], dark = ['#2b2f36', '#121418'][n], metal = ['#9aa3ad', '#3b3f45'][n];
+    rect(g, dark, 9, 18, 14, 3);      // 받침
+    rect(g, body, 19, 6, 3, 13);      // 기둥(팔)
+    rect(g, body, 16, 4, 5, 3);       // 팔 윗부분
+    rect(g, dark, 11, 13, 10, 2);     // 재물대
+    rect(g, metal, 13, 7, 4, 6);      // 대물렌즈 쪽 경통
+    rect(g, body, 12, 3, 5, 4);       // 머리
+    rect(g, dark, 10, 1, 3, 3);       // 접안렌즈
+    rect(g, metal, 22, 10, 2, 3);     // 초점 손잡이
+    rect(g, ['#ffe9a8', '#6b6040'][n], 14, 16, 2, 2); // 아래 조명
+  },
   shelf(g, n, r) {
     PIXEL_TILES.floor(g, n, r);
     const frame = ['#6d7682', '#262b33'][n];
@@ -743,6 +797,66 @@ const SPRITES = {
       rect(ctx, '#f0a040', fx + (Math.cos(o.t * 1.3) > 0 ? -2 : 5), y + 14, 2, 3);
     }
   },
+  // 러브버그 대발생 (data/lovebug.js): 두 마리가 붙은 채 둥실거리며 난다 — 검은 몸, 붉은 가슴
+  lovebug(ctx, x, y, o) {
+    const ph = hash(o.ev.x, o.ev.y, 11) * 6.28 + o.ev.id.length;
+    for (let k = 0; k < 3; k++) { // 한 자리에 세 쌍
+      const cx = x + 8 + k * 8 + Math.sin(o.t * 2.1 + ph + k * 2) * 5, cy = y + 8 + k * 5 + Math.sin(o.t * 2.9 + ph * 2 + k) * 4;
+      const flap = Math.sin(o.t * 30 + k) > 0 ? 1 : 0;
+      rect(ctx, 'rgba(200, 210, 220, 0.5)', cx - 2, cy - 2 - flap, 2, 1); rect(ctx, 'rgba(200, 210, 220, 0.5)', cx + 3, cy - 2 - flap, 2, 1); // 날개
+      rect(ctx, '#15181d', cx - 3, cy, 3, 1.5); rect(ctx, '#15181d', cx + 2, cy, 3, 1.5); // 두 마리의 배 (꽁무니가 붙어 있다)
+      rect(ctx, '#c8402d', cx - 1, cy - 0.5, 1, 1.5); rect(ctx, '#c8402d', cx + 2, cy - 0.5, 1, 1.5); // 붉은 가슴
+      rect(ctx, '#15181d', cx - 4, cy - 0.5, 1, 1); rect(ctx, '#15181d', cx + 5, cy - 0.5, 1, 1);      // 머리
+    }
+  },
+  // 시료 자리 (src/spots.js): 잔해 더미 — 콘크리트 덩어리 몇 개와 부스러기
+  rubblePile(ctx, x, y, o) {
+    const r = (s) => hash(o.ev.x, o.ev.y, s);
+    oval(ctx, 'rgba(0,0,0,0.3)', x + 16, y + 25, 12, 4);
+    for (let i = 0; i < 5; i++) {
+      const cx = x + 6 + r(i) * 20, cy = y + 14 + r(i + 9) * 10, w = 5 + r(i + 3) * 6, h = 3 + r(i + 5) * 4;
+      rect(ctx, ['#8a8d92', '#6e7176', '#9a9c9f'][i % 3], Math.round(cx), Math.round(cy), Math.round(w), Math.round(h));
+      rect(ctx, '#b4b6b8', Math.round(cx), Math.round(cy), Math.round(w), 1);
+    }
+    rect(ctx, '#5a3a2a', x + 9, y + 12, 1, 9); rect(ctx, '#5a3a2a', x + 10, y + 11, 6, 1); // 튀어나온 철근
+    for (let i = 0; i < 6; i++) rect(ctx, '#7d8085', x + 4 + r(i + 20) * 24, y + 22 + r(i + 30) * 5, 1, 1);
+  },
+  // 시료 자리: 물웅덩이 — 어두운 물과 가끔 반짝이는 물결
+  puddle(ctx, x, y, o) {
+    oval(ctx, '#1e2b38', x + 16, y + 20, 12, 6);
+    oval(ctx, '#2d4256', x + 15, y + 19, 9, 4);
+    const glint = (Math.sin(o.t * 1.5 + o.ev.x) + 1) / 2;
+    ctx.fillStyle = `rgba(190, 220, 240, ${0.15 + 0.35 * glint})`;
+    ctx.fillRect(x + 10, y + 18, 6, 1);
+    ctx.fillRect(x + 18, y + 21, 4, 1);
+  },
+  // 관찰 동물 (src/spots.js): ev.animal = bird · raccoonDog · cat, 새는 종(ev.pick)마다 BIRD_LOOKS 색
+  animal(ctx, x, y, o) {
+    const ev = o.ev;
+    ctx.save();
+    animalSpace(ctx, x, y, ev);
+    if (ev.animal === 'bird') drawBird(ctx, BIRD_LOOKS[ev.pick] ?? BIRD_LOOKS.bulbul, ev, o.t);
+    else if (ev.animal === 'cat') drawCat(ctx, ev, o.t);
+    else drawRaccoonDog(ctx, ev, o.t);
+    ctx.restore();
+  },
+  // 305호 화석 선반·현미경 테이블 (조사할 수 있는 칸 — 그림은 PIXEL_TILES)
+  fossilShelf(ctx, x, y, o) { ctx.drawImage(pixelTile('fossilShelf', day(o), Math.floor(hash(o.ev.x, o.ev.y, 7) * VARIANTS)), x, y); },
+  microscope(ctx, x, y, o) { ctx.drawImage(pixelTile('microscope', day(o), 0), x, y); },
+  // 가재 수조 (305호): 받침장 위 수조, 바닥 자갈 위를 붉은 가재가 천천히 오간다
+  crayfishTank(ctx, x, y, o) {
+    rect(ctx, '#4a4f58', x + 2, y + 22, T - 4, 8);
+    rect(ctx, '#9fb3c8', x + 3, y + 4, T - 6, 19);
+    rect(ctx, '#2f6a8e', x + 4, y + 7, T - 8, 15);
+    rect(ctx, '#7c6f5e', x + 4, y + 19, T - 8, 3); // 자갈
+    rect(ctx, '#3f8a4a', x + 6, y + 12, 2, 7); rect(ctx, '#3f8a4a', x + 8, y + 14, 1, 5); // 수초
+    const cx = x + 10 + Math.round(((Math.sin(o.t * 0.35) + 1) / 2) * 11);
+    const left = Math.cos(o.t * 0.35) < 0;
+    rect(ctx, '#c8402d', cx, y + 17, 6, 2);                     // 몸
+    rect(ctx, '#e0573f', left ? cx - 2 : cx + 6, y + 15, 2, 2);  // 집게
+    rect(ctx, '#e0573f', left ? cx - 2 : cx + 6, y + 18, 2, 1);
+    rect(ctx, '#8a2a1e', left ? cx + 6 : cx - 1, y + 17, 1, 2); // 꼬리
+  },
   // ── 사람·세이브 ──
   // NPC: 겉모습은 data/looks.js(이름으로 찾음), 없으면 이벤트의 color가 옷 색. 이벤트에 look을 주면 덧입힌다. 말을 걸면 ev.dir이 플레이어 쪽으로 바뀐다.
   npc(ctx, x, y, o) {
@@ -854,6 +968,175 @@ function drawShark(ctx, x, y, dir, t, moving) {
   ctx.drawImage(sharkCanvas(dir, frame), x, y + bob);
 }
 // 추격자의 눈빛 — 어둠(drawLighting) 위에 그린다. 불이 꺼진 어둠 속에서도 빨간 두 점이 또렷하게 맥박친다
+// ── 관찰 동물 (src/spots.js — 새·너구리·고양이) ── 오른쪽을 보는 그림을 그리고, 왼쪽이면 뒤집는다.
+//  걷는 중이면 ev.px가 있다(game.moveEvent). 새는 걸을 때 깡충, 날 때(ev.flying) 날갯짓, 쉴 때 가끔 모이를 쪼고,
+//  너구리는 쉴 때 땅에 코를 대고 킁킁, 고양이는 쉴 때 앉아서 꼬리를 흔든다.
+//  새 색: body 몸 · belly 배 · wing 날개 · head 머리 · cheek 뺨 · nape 뒷머리 · patch 날개 흰 점 · tie 가슴 줄 · vent 아랫배 · tail 꼬리(tailLen 길이) · beak 부리 · size 크기
+const BIRD_LOOKS = {
+  magpie: { body: '#15181d', belly: '#f0f0ea', wing: '#24345e', head: '#15181d', patch: '#f0f0ea', tail: '#1d2850', tailLen: 9, beak: '#15181d', size: 1.15 },
+  bulbul: { body: '#6e7078', belly: '#8e9098', wing: '#5a5c64', head: '#787a82', cheek: '#8a5a40', tail: '#5a5c64', tailLen: 6, beak: '#202020', size: 1 },
+  lightVentedBulbul: { body: '#7c8a6c', belly: '#dcdcd2', wing: '#6c7a5c', head: '#15181d', nape: '#f2f2ee', tail: '#6c7a5c', tailLen: 5, beak: '#202020', size: 0.95 },
+  tit: { body: '#7d8a96', belly: '#e8eef0', wing: '#5c6874', head: '#15181d', cheek: '#f2f2f2', tie: '#15181d', tail: '#3a4048', tailLen: 5, beak: '#15181d', size: 0.8 },
+  redstart: { body: '#33343a', belly: '#e07a30', wing: '#2a2a30', head: '#b8c0c8', patch: '#f2f2ee', tail: '#d06a28', tailLen: 5, beak: '#15181d', size: 0.85 },
+  azureMagpie: { body: '#c4c0b8', belly: '#dcd8d0', wing: '#78acd6', head: '#15181d', tail: '#78acd6', tailLen: 10, beak: '#15181d', size: 1.05 },
+  woodpecker: { body: '#15181d', belly: '#ece6dc', wing: '#15181d', head: '#15181d', cheek: '#f2f2ee', nape: '#c8402d', patch: '#f2f2ee', vent: '#c8402d', tail: '#15181d', tailLen: 4, beak: '#3a3a3a', size: 1 },
+};
+const oval = (ctx, color, cx, cy, rx, ry) => { ctx.fillStyle = color; ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.fill(); };
+const tri = (ctx, color, pts) => { ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(...pts[0]); pts.slice(1).forEach((p) => ctx.lineTo(...p)); ctx.fill(); };
+// 걷는 중 한 칸 안에서 어디쯤인지 (0~1) — 다리·깡충 박자
+const stepPhase = (ev) => (((ev.px ?? ev.x) + (ev.py ?? ev.y)) % 1 + 1) % 1;
+
+function drawBird(ctx, L, ev, t) {
+  const moving = ev.px !== undefined, ph = stepPhase(ev);
+  let lift = 0;
+  if (moving && ev.flying) lift = -9;
+  else if (moving) lift = -Math.abs(Math.sin(ph * Math.PI)) * 4; // 깡충
+  const peck = !moving && ev.resting && Math.sin(t * 2.3 + ev.x * 1.7) > 0.8; // 쉴 때 가끔 모이 쪼기
+  ctx.translate(0, lift);
+  ctx.scale(L.size, L.size);
+  rect(ctx, '#3a3028', -1, -3, 1, 3); rect(ctx, '#3a3028', 1, -3, 1, 3); // 다리
+  rect(ctx, L.tail, -6 - L.tailLen, -9, L.tailLen, 2);               // 꼬리
+  oval(ctx, L.body, -1, -7, 6, 4);
+  oval(ctx, L.belly, 0.5, -5.5, 4.5, 2.5);
+  if (L.tie) rect(ctx, L.tie, 1, -8, 1.5, 5);
+  if (L.vent) rect(ctx, L.vent, -4, -5, 2, 1.5);
+  if (moving && ev.flying) { // 날갯짓
+    const flap = Math.sin(t * 22) * 5;
+    tri(ctx, L.wing, [[-4, -9], [1, -9], [-2, -15 - flap]]);
+  } else {
+    oval(ctx, L.wing, -2, -8, 4, 2.2);
+    if (L.patch) rect(ctx, L.patch, -3, -9, 2, 1.5);
+  }
+  const hx = peck ? 6 : 5, hy = peck ? -7 : -11; // 머리 (쪼을 때는 앞으로 숙인다)
+  oval(ctx, L.head, hx, hy, 3.2, 3.2);
+  if (L.cheek) oval(ctx, L.cheek, hx + 0.6, hy + 0.8, 1.6, 1.3);
+  if (L.nape) rect(ctx, L.nape, hx - 3, hy - 2, 2, 2);
+  rect(ctx, L.head === '#15181d' ? '#e8e8e8' : '#0b0b0b', hx + 1, hy - 1, 1, 1); // 눈 (검은 머리면 밝게)
+  tri(ctx, L.beak, [[hx + 3, hy - 0.5], [hx + 5.5, hy + 0.3], [hx + 3, hy + 1]]);
+}
+
+function drawRaccoonDog(ctx, ev, t) {
+  const moving = ev.px !== undefined, ph = stepPhase(ev);
+  const sniff = !moving && ev.resting && Math.sin(t * 1.6 + ev.x) > 0.3; // 땅에 코를 대고 킁킁
+  const swing = moving ? Math.sin(ph * Math.PI * 2) * 1.5 : 0;
+  [[-7, swing], [-4, -swing], [3, -swing], [6, swing]].forEach(([lx, s]) => rect(ctx, '#2a2420', lx + s, -5, 2, 5)); // 다리
+  oval(ctx, '#5a4a3a', -11, -9, 4, 3); oval(ctx, '#2a2420', -14, -9, 1.5, 2);  // 꼬리 (끝이 검다)
+  oval(ctx, '#7a6a58', -1, -8, 9, 5);                                             // 몸
+  oval(ctx, '#5a4a3a', -2, -11, 7, 2);                                            // 등의 짙은 털
+  const hx = 9, hy = sniff ? -7 : -11;
+  rect(ctx, '#5a4a3a', hx - 2, hy - 5, 2, 3); rect(ctx, '#5a4a3a', hx + 1, hy - 5, 2, 3); // 귀
+  oval(ctx, '#a89880', hx, hy, 4.5, 3.8);                                          // 머리
+  oval(ctx, '#2a2420', hx + 1, hy, 3, 1.6);                                        // 눈가의 검은 무늬
+  rect(ctx, '#2a2420', hx + 4, hy + 1, 2, 2);                                      // 코
+}
+
+function drawCat(ctx, ev, t) {
+  const moving = ev.px !== undefined, ph = stepPhase(ev);
+  // 연구소 고양이 (작가 설명 2026-10-06): 주황 바탕에 연한 갈색 줄무늬, 배는 흰색
+  const fur = '#e8913a', stripe = '#d9b384', white = '#f4efe6';
+  if (!moving && ev.resting) { // 앉아서 꼬리를 흔든다
+    const flick = Math.sin(t * 2.2 + ev.x) * 3;
+    ctx.strokeStyle = fur; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-3, -2); ctx.quadraticCurveTo(-11, -2, -9 + flick, -9); ctx.stroke();
+    ctx.strokeStyle = stripe; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(-7, -2.5); ctx.lineTo(-8, -2.5); ctx.stroke(); // 꼬리 줄무늬
+    oval(ctx, fur, 0, -8, 5, 7);
+    oval(ctx, white, 2, -6, 3, 5);                                          // 흰 가슴·배
+    rect(ctx, stripe, -4, -13, 3, 1); rect(ctx, stripe, -5, -10, 3, 1); rect(ctx, stripe, -5, -7, 3, 1);
+    rect(ctx, white, 0, -2, 2, 2); rect(ctx, white, 3, -2, 2, 2);          // 흰 앞발
+    oval(ctx, fur, 2, -17, 4, 3.6);
+    rect(ctx, stripe, 0, -20, 1, 2); rect(ctx, stripe, 2, -21, 1, 2); rect(ctx, stripe, 4, -20, 1, 2); // 이마 줄무늬
+    oval(ctx, white, 3.5, -15.5, 2, 1.4);                                    // 흰 주둥이
+    tri(ctx, fur, [[-1, -19], [0, -23], [2, -19]]); tri(ctx, fur, [[3, -19], [5, -23], [6, -19]]);
+    rect(ctx, '#2a2a20', 3, -18, 1, 1); rect(ctx, '#2a2a20', 5, -18, 1, 1); rect(ctx, '#e8a0a0', 4, -16, 1, 1);
+    return;
+  }
+  const swing = moving ? Math.sin(ph * Math.PI * 2) * 1.5 : 0;
+  [[-6, swing], [-3, -swing], [3, -swing], [6, swing]].forEach(([lx, s]) => { rect(ctx, fur, lx + s, -5, 1.5, 4); rect(ctx, white, lx + s, -1, 1.5, 1); }); // 다리 (발끝 흰색)
+  ctx.strokeStyle = fur; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-8, -9); ctx.quadraticCurveTo(-13, -11, -12, -18); ctx.stroke(); // 꼬리 (위로)
+  rect(ctx, stripe, -13, -13, 2, 1); rect(ctx, stripe, -13, -16, 2, 1);                       // 꼬리 줄무늬
+  oval(ctx, fur, -1, -8, 8, 4);
+  oval(ctx, white, 0, -5.5, 6, 1.8);                                                          // 흰 배
+  rect(ctx, stripe, -6, -12, 1.5, 4); rect(ctx, stripe, -3, -12, 1.5, 4); rect(ctx, stripe, 0, -12, 1.5, 4); rect(ctx, stripe, 3, -11, 1.5, 3);
+  oval(ctx, white, 6, -8, 2, 2.5);                                                            // 흰 가슴
+  oval(ctx, fur, 8, -12, 4, 3.6);
+  rect(ctx, stripe, 6, -15, 1, 2); rect(ctx, stripe, 8, -16, 1, 2);                           // 이마 줄무늬
+  oval(ctx, white, 10.5, -10.5, 1.8, 1.3);                                                    // 흰 주둥이
+  tri(ctx, fur, [[5, -14], [6.5, -18], [8, -14]]); tri(ctx, fur, [[8.5, -14], [10, -18], [11.5, -14]]);
+  rect(ctx, '#2a2a20', 10, -13, 1, 1); rect(ctx, '#e8a0a0', 12, -11, 1, 1);
+}
+
+// 동물 그림의 눈 자리 (어둠 속 눈빛용) — 오른쪽을 볼 때의 좌표
+function animalEyes(ev, t) {
+  const still = ev.px === undefined && ev.resting;
+  if (ev.animal === 'cat') return still ? [[3, -18], [5, -18]] : [[10, -13]];
+  const y = still && Math.sin(t * 1.6 + ev.x) > 0.3 ? -7 : -11; // 너구리가 킁킁거릴 때는 머리가 낮다
+  return [[10, y], [11.5, y]];
+}
+// 오른쪽을 보는 그림 좌표계로 옮긴다: 칸 아래 가운데가 (0, 0), 왼쪽을 보면 뒤집는다
+function animalSpace(ctx, x, y, ev) {
+  ctx.translate(x + 16, y + 28);
+  if (ev.face === 'left') ctx.scale(-1, 1);
+}
+
+// ── 어둠 위에 그리는 것 (이벤트의 overDark) ── 불이 꺼져 있어도 은은히 보인다. 채집 자리(src/spots.js)가 쓴다
+const OVER_DARK = {
+  // 강조된 나무: 우듬지 둘레로 반짝이는 점 셋 + 옅은 테
+  treeGlow(ctx, x, y, t, ev) {
+    const ph = hash(ev.x, ev.y, 3) * 6.28;
+    const a = 0.22 + 0.12 * Math.sin(t * 2 + ph);
+    const g = ctx.createRadialGradient(x + 16, y + 12, 2, x + 16, y + 12, 18);
+    g.addColorStop(0, `rgba(200, 255, 190, ${a})`);
+    g.addColorStop(1, 'rgba(200, 255, 190, 0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(x - 4, y - 8, 40, 40);
+    for (let i = 0; i < 3; i++) {
+      const tw = Math.max(0, Math.sin(t * 3 + ph + i * 2.1));
+      ctx.fillStyle = `rgba(235, 255, 220, ${0.75 * tw})`;
+      const sx = x + 6 + i * 9 + Math.round(Math.sin(ph + i) * 3), sy = y + 3 + ((i * 7) % 11);
+      ctx.fillRect(sx, sy, 2, 2);
+      ctx.fillRect(sx - 1, sy + 0.5, 4, 1);
+    }
+  },
+  // 눈빛: 어둠 속에서 너구리·고양이의 눈이 빛을 받아 반짝인다 (고양이는 초록, 너구리는 호박색)
+  eyeshine(ctx, x, y, t, ev) {
+    const color = ev.animal === 'cat' ? [190, 255, 140] : [255, 200, 110];
+    const a = 0.55 + 0.25 * Math.sin(t * 1.3 + ev.x);
+    ctx.save();
+    animalSpace(ctx, x, y, ev);
+    for (const [ex, ey] of animalEyes(ev, t)) {
+      const g = ctx.createRadialGradient(ex, ey, 0, ex, ey, 4);
+      g.addColorStop(0, `rgba(${color.join(',')}, ${a})`);
+      g.addColorStop(1, `rgba(${color.join(',')}, 0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(ex - 4, ey - 4, 8, 8);
+      ctx.fillStyle = `rgba(${color.join(',')}, ${Math.min(1, a + 0.3)})`;
+      ctx.fillRect(ex - 0.5, ey - 0.5, 1.5, 1.5);
+    }
+    ctx.restore();
+  },
+  // 나는 빛: 작은 몸 + 노란 빛무리, 제자리에서 둥실거린다 (칸 이동은 wander)
+  firefly(ctx, x, y, t, ev) {
+    const ph = hash(ev.x, ev.y, 5) * 6.28 + ev.id.length;
+    const cx = x + 16 + Math.sin(t * 1.7 + ph) * 6, cy = y + 12 + Math.sin(t * 2.3 + ph * 2) * 4;
+    const a = 0.55 + 0.35 * Math.sin(t * 4 + ph);
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 11);
+    g.addColorStop(0, `rgba(240, 255, 150, ${a})`);
+    g.addColorStop(0.4, `rgba(200, 240, 110, ${a * 0.35})`);
+    g.addColorStop(1, 'rgba(200, 240, 110, 0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(cx - 11, cy - 11, 22, 22);
+    rect(ctx, '#f8ffd0', Math.round(cx) - 1, Math.round(cy) - 1, 2, 2);
+  },
+};
+export function drawOverDark(ctx, world, cam, t) {
+  for (const ev of world.visibleEvents()) {
+    const f = ev.overDark && OVER_DARK[ev.overDark];
+    if (f) f(ctx, Math.round((ev.px ?? ev.x) * T - cam.x), Math.round((ev.py ?? ev.y) * T - cam.y), t, ev);
+  }
+}
+
 export function drawChaserGlow(ctx, chaser, cam, t) {
   if (chaser.kind !== 'shark') return;
   const x = Math.round(chaser.px * T - cam.x), y = Math.round(chaser.py * T - cam.y) + sharkBob(t);
@@ -1298,6 +1581,7 @@ const ICON_COLORS = {
   k: '#1b1f27', w: '#f2f2ee', b: '#3d6bb3', p: '#e8b98f', l: '#9aa3ad', r: '#c8372d', s: '#ee8a7e',
   m: '#b8c0ca', y: '#ffe27a', d: '#3a3f4a', c: '#7fe0e8', L: '#d0a040', q: '#9cc9dc', n: '#e8e8e8',
   h: '#a0784a', o: '#b0844e', O: '#8a6538',
+  a: '#7a9a5a', A: '#4f6b3a', z: '#e8c45a', x: '#cfe3e8', // 소동물 아이콘의 몸·짙은 몸·눈이나 무늬·날개 — 종마다 tint로 바꾼다
   P: '#efe0b4', G: '#5aa04a', g: '#2f6b2a', e: '#7a4a2a', E: '#4e2e18', f: '#f0a040', F: '#c06a20', u: '#6f7f96',
 };
 const ICONS = {
@@ -1321,6 +1605,16 @@ const ICONS = {
     '......kkkk....', '......h.......', '.....h........', '....h.........', '...h..........', '..h...........',
     '.h............', '..............',
   ],
+  camera: [ // 카메라
+    '..............', '..............', '....kkk.......', '.kkkdddkkkkkk.', '.kddddddddrdk.', '.kdddkkkkdddk.',
+    '.kddkcccckddk.', '.kddkcwcckddk.', '.kddkcccckddk.', '.kdddkkkkdddk.', '.kddddddddddk.', '.kkkkkkkkkkkk.',
+    '..............', '..............',
+  ],
+  vial: [ // 시료병
+    '..............', '.....LLLL.....', '.....LLLL.....', '.....kkkk.....', '.....kqqk.....', '.....kqqk.....',
+    '.....kqqk.....', '.....kwqk.....', '.....kqqk.....', '.....kGGk.....', '.....kGGk.....', '.....kGGk.....',
+    '......kk......', '..............',
+  ],
   jar: [ // 뚜껑 달린 채집통
     '..............', '....LLLLLL....', '....LLLLLL....', '...kkkkkkkk...', '...kwqqqqqk...', '...kwqqqqqk...',
     '...kqqqqqqk...', '...kqqqqqqk...', '...kqqqqqqk...', '...kqqqqqqk...', '...kqqqqqqk...', '...kkkkkkkk...',
@@ -1343,6 +1637,117 @@ Object.assign(ICONS, {
     '..............', '..............', '..............', '..............', '.....ffff.....', 'F..ffffffff...',
     'FF.fffffffkf..', 'FFFffffffffff.', 'FF.ffffffffff.', 'F..ffffffff...', '.....ffff.....', '..............',
     '..............', '..............',
+  ],
+  // 소동물 계열 아이콘 — a 몸 · A 짙은 몸 · z 눈·무늬 · x 날개. 종마다 creatures.js의 tint로 색을 바꿔 돌려쓴다
+  cicada: [ // 매미
+    '..............', '.....kkkk.....', '....kAaaAk....', '...kzkaakzk...', '....kaaaak....', '..xxkaaaakxx..',
+    '.xxxxaaaaxxxx.', '.xxxxaAAaxxxx.', '..xxxaAAaxxx..', '..xxxkaakxxx..', '...xxxkkxxx...', '....xxxxxx....',
+    '.....xxxx.....', '..............',
+  ],
+  hopper: [ // 메뚜기·여치·귀뚜라미
+    '..............', '..............', '..........k...', '.........k....', '...aaaaaaa....', '..aAAAAAAAAk..',
+    '.aAAAAAAAAAAz.', '..aAAAAAAAAa..', '...a.a...aa...', '..a...a.a..a..', '.a.....a....a.', '..............',
+    '..............', '..............',
+  ],
+  mantis: [ // 사마귀
+    '..............', '...k......k...', '....k....k....', '.....zaaz.....', '......aa......', '....a.aa.a....',
+    '...a..aa..a...', '...aa.aa.aa...', '......aa......', '.....aAAa.....', '....aAAAAa....', '....aAAAAa....',
+    '.....aAAa.....', '......aa......',
+  ],
+  ant: [ // 개미
+    '..............', '....k....k....', '.....k..k.....', '......aa......', '.....aaaa.....', '..k...aa...k..',
+    '...k.aaaa.k...', '....kaaaak....', '...k..aa..k...', '..k..aaaa..k..', '....aaaaaa....', '....aaaaaa....',
+    '.....aaaa.....', '..............',
+  ],
+  bee: [ // 벌
+    '..............', '..xxx....xxx..', '.xxxxx..xxxxx.', '.xxxxxkkxxxxx.', '..xxxkzzkxxx..', '.....kzzk.....',
+    '....kaaaak....', '....aaaaaa....', '....aAAAAa....', '....aaaaaa....', '.....aAAa.....', '......aa......',
+    '..............', '..............',
+  ],
+  butterfly: [ // 나비·나방 (꽃매미도)
+    '..............', '...k......k...', '....k....k....', '.aaa..kk..aaa.', 'aaaaa.kk.aaaaa', 'aazaa.kk.aazaa',
+    'aaaaaakkaaaaaa', '.aaaa.kk.aaaa.', '..AAA.kk.AAA..', '.AAAA.kk.AAAA.', '.AAA..kk..AAA.', '..A...kk...A..',
+    '..............', '..............',
+  ],
+  dragonfly: [ // 잠자리
+    '..............', '......zz......', '......aa......', '.xxxxxaaxxxxx.', 'xxxxxxaaxxxxxx', '.xxxxxaaxxxxx.',
+    '..xxxxaaxxxx..', '.xxxxxaaxxxxx.', '......aa......', '......aa......', '......aa......', '......AA......',
+    '......AA......', '..............',
+  ],
+  fly: [ // 파리 (파리매·러브버그)
+    '..............', '..............', '..xx......xx..', '.xxxx....xxxx.', '.xxxxx..xxxxx.', '..xxxxkkxxxx..',
+    '.....kzzk.....', '.....kaak.....', '....kaaaak....', '....kaAAak....', '.....aAAa.....', '.....aAAa.....',
+    '......aa......', '..............',
+  ],
+  caterpillar: [ // 애벌레
+    '..............', '..............', '..............', '..z..z..z..z..', '.zaazaazaazaa.', 'kaaaaaaaaaaaa.',
+    'kzaAAaAAaAAaa.', '.aaaaaaaaaaaa.', '..z..z..z..z..', '..............', '..............', '..............',
+    '..............', '..............',
+  ],
+  cocoon: [ // 고치
+    '..............', '..............', '.....aaaa.....', '....aAaaAa....', '...aaAaaAaa...', '...aAaaaaAa...',
+    '...aaaAAaaa...', '...aAaaaaAa...', '...aaAaaAaa...', '....aAaaAa....', '.....aaaa.....', '..............',
+    '..............', '..............',
+  ],
+  centipede: [ // 지네·그리마·노래기
+    '..............', '..............', '..............', 'k.k.k.k.k.k...', '.k.k.k.k.k.k..', 'zaaaaaaaaaaaa.',
+    'zaAaAaAaAaAaa.', '.k.k.k.k.k.k..', 'k.k.k.k.k.k...', '..............', '..............', '..............',
+    '..............', '..............',
+  ],
+  isopod: [ // 공벌레·쥐며느리
+    '..............', '..............', '....k....k....', '.....kaak.....', '....aaaaaa....', '...aAAAAAAa...',
+    '...aaaaaaaa...', '...aAAAAAAa...', '...aaaaaaaa...', '...aAAAAAAa...', '....aaaaaa....', '.....aaaa.....',
+    '..............', '..............',
+  ],
+  snail: [ // 달팽이
+    '..............', '..............', '.....AAAA.....', '....AaaaaA....', '...AaAAAaaA...', '...AaAaAaaA...',
+    '...AaaAaaaA...', '....AaaaaA..k.', '.....AAAA..k..', '.zzzzzzzzzzzz.', 'zzzzzzzzzzzzz.', '..............',
+    '..............', '..............',
+  ],
+  worm: [ // 지렁이
+    '..............', '..............', '..............', '..............', '..............', '...aaa....aaa.',
+    '..aAAAa..aAAAz', '.aa...aaaa..zz', 'aa............', '..............', '..............', '..............',
+    '..............', '..............',
+  ],
+  frog: [ // 개구리
+    '..............', '...aa....aa...', '..azka..akza..', '..aaaaaaaaaa..', '...aaaaaaaa...', '.a.aAAAAAAa.a.',
+    'aa.aAAAAAAa.aa', '...aaaaaaaa...', '...aaaaaaaa...', '..aa.aaaa.aa..', '.aa........aa.', 'aa..........aa',
+    '..............', '..............',
+  ],
+  spider: [ // 거미
+    '..............', 'k...k....k...k', '.k...k..k...k.', '..k..kaak..k..', '...kkaaaakk...', '.....aaaa.....',
+    '...kkaAAakk...', '..k..aAAa..k..', '.k..aazzaa..k.', 'k...aAAAAa...k', '....aaaaaa....', '.....aaaa.....',
+    '..............', '..............',
+  ],
+  bird: [ // 새
+    '..............', '..............', '.......aaa....', '......aakaa...', '......aaaaaz..', '..aaaaaaaa....',
+    '.aAAAAAaaa....', 'aAAAAAAaaa....', '.xxAAAAxxx....', '..xxxxxxx.....', '....k..k......', '....k..k......',
+    '..............', '..............',
+  ],
+  mammal: [ // 네발짐승 (너구리·고양이)
+    '..............', '..............', '.a..a.........', '.aaaa.........', '.akak.........', '.aaaz.........',
+    '..aaaaaaaaa...', '..aaaaaaaaaa.a', '..aAAAAAAAaaaa', '..aAAAAAAAa...', '..a.a...a.a...', '..a.a...a.a...',
+    '..............', '..............',
+  ],
+  lizard: [ // 도마뱀붙이
+    '..............', '....aaa.......', '...azaza......', '...aaaaa......', '.a..aaa..a....', '..aaaaaaaa....',
+    '....aAAa......', '....aAAa......', '..aaaaaaaa....', '.a..aAAa..a...', '.....aa.......', '......aa......',
+    '.......aaa....', '..............',
+  ],
+  crayfish: [ // 가재
+    '..............', '.AA........AA.', 'AaA........AaA', '.AA.k....k.AA.', '..aa.k..k.aa..', '....aaaaaa....',
+    '...aAAAAAAa...', '....aaaaaa....', '.....aAAa.....', '.....aaaa.....', '.....aAAa.....', '....aaaaaa....',
+    '...aa.aa.aa...', '..............',
+  ],
+  slime: [ // 점균
+    '..............', '..............', '..............', '.....aaaa.....', '...aaazaaaa...', '..aazaaaazaa..',
+    '.aaaaaaAaaaaa.', '.aAaaazaaaaza.', '.aaaaAaaaAaaa.', '..aaaaaaaaaa..', '.AAAAAAAAAAAA.', '..............',
+    '..............', '..............',
+  ],
+  microbe: [ // 현미경으로 본 작은 것 (진드기·윤형동물·완보동물 등)
+    '....xxxxxx....', '..xx......xx..', '.x..........x.', '.x...aaaa...x.', 'x...aAAAAa...x', 'x..k.aaaa.k..x',
+    'x...aAAAAa...x', 'x..k.aaaa.k..x', 'x...aAAAAa...x', '.x...aaaa...x.', '.x..........x.', '..xx......xx..',
+    '....xxxxxx....', '..............',
   ],
   quest: [ // 퀘스트 — 느낌표가 적힌 종이
     '..............', '..OOOOOOOOOO..', '..OPPPPPPPPO..', '..OPPPrrPPPO..', '..OPPPrrPPPO..', '..OPPPrrPPPO..',
@@ -1377,14 +1782,17 @@ ICONS.default = [
   '..............', '..............',
 ];
 const iconCache = new Map();
-function iconCanvas(id) {
-  const key = ICONS[id] ? id : 'default';
+// tint = { 글자: 색 } — 같은 아이콘을 색만 바꿔 돌려쓴다(소동물 creatures.js의 tint)
+function iconCanvas(id, tint = null) {
+  const name = ICONS[id] ? id : 'default';
+  const key = tint ? `${name}|${JSON.stringify(tint)}` : name;
   let c = iconCache.get(key);
   if (!c) {
     c = document.createElement('canvas');
     c.width = c.height = 14;
     const g = c.getContext('2d');
-    ICONS[key].forEach((row, y) => [...row].forEach((ch, x) => { if (ICON_COLORS[ch]) rect(g, ICON_COLORS[ch], x, y, 1, 1); }));
+    const colors = tint ? { ...ICON_COLORS, ...tint } : ICON_COLORS;
+    ICONS[name].forEach((row, y) => [...row].forEach((ch, x) => { if (colors[ch]) rect(g, colors[ch], x, y, 1, 1); }));
     iconCache.set(key, c);
   }
   return c;
@@ -1401,7 +1809,7 @@ function iconImage(path) {
   return img.complete && img.naturalWidth ? img : null;
 }
 // 이름 왼쪽의 아이콘 칸: (x, y)가 칸의 왼쪽 위. id = 아이템 id 또는 소동물 아이콘 이름, image = iconImage 경로
-export function drawItemIcon(ctx, id, x, y, scale = 1, image = null) {
+export function drawItemIcon(ctx, id, x, y, scale = 1, image = null, tint = null) {
   const s = iconSlot(scale);
   rect(ctx, '#0b1220', x, y, s, s);
   ctx.strokeStyle = '#4a5d7c';
@@ -1409,7 +1817,7 @@ export function drawItemIcon(ctx, id, x, y, scale = 1, image = null) {
   ctx.strokeRect(x + 0.5, y + 0.5, s - 1, s - 1);
   const smooth = ctx.imageSmoothingEnabled;
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage((image && iconImage(image)) || iconCanvas(id), x + 3, y + 3, 14 * scale, 14 * scale);
+  ctx.drawImage((image && iconImage(image)) || iconCanvas(id, tint), x + 3, y + 3, 14 * scale, 14 * scale);
   ctx.imageSmoothingEnabled = smooth;
 }
 

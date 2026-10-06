@@ -1,15 +1,19 @@
-import { state, hasItem, saveGame, readSave, readAllSaves, curseLevel } from './state.js?v=0.32.0';
-import { CURSE } from './data/curse.js?v=0.32.0';
-import { NOTES } from './data/notes.js?v=0.32.0';
-import { HELPS } from './data/helps.js?v=0.32.0';
-import { MAPS } from './data/maps.js?v=0.32.0';
-import { ITEMS } from './data/items.js?v=0.32.0';
-import { QUESTS } from './data/quests.js?v=0.32.0';
-import { CREATURES } from './data/creatures.js?v=0.32.0';
-import { fader } from './fader.js?v=0.32.0';
-import { sfx } from './audio.js?v=0.32.0';
+import { state, hasItem, saveGame, readSave, readAllSaves, curseLevel } from './state.js?v=0.37.0';
+import { CURSE } from './data/curse.js?v=0.37.0';
+import { NOTES } from './data/notes.js?v=0.37.0';
+import { HELPS } from './data/helps.js?v=0.37.0';
+import { MAPS } from './data/maps.js?v=0.37.0';
+import { ITEMS } from './data/items.js?v=0.37.0';
+import { QUESTS } from './data/quests.js?v=0.37.0';
+import { CREATURES, SPOTS, toolsOf, rarityOf, rollCreature } from './data/creatures.js?v=0.37.0';
+import { OUTBREAK_AGAIN } from './data/lovebug.js?v=0.37.0';
+import { fader } from './fader.js?v=0.37.0';
+import { sfx } from './audio.js?v=0.37.0';
 
-import { josa } from './text.js?v=0.32.0';
+import { josa } from './text.js?v=0.37.0';
+
+// 잔해·고인 물을 처음 조사할 때 「의심스럽다」가 나올 확률 (시료 — creatures.js SPOTS.rubble·puddle)
+const SAMPLE_CHANCE = 0.4;
 
 const subtitle = (opts) => (opts.sub && hasItem('translator') ? opts.sub : null);
 
@@ -82,27 +86,94 @@ export function createRunner(game) {
     creature: {
       status: (id) => state.creatures[id] ?? null,                  // null | 'caught' | 'delivered'
       carried: () => Object.keys(state.creatures).filter((id) => state.creatures[id] === 'caught'),
-      // 잡는 데 쓸 도구: tools 중 가진 것 하나 (tools가 비었으면 'hands')
-      toolFor(id) {
-        const tools = CREATURES[id].tools ?? [];
+      // 잡는 데 쓸 도구: 가진 것 하나 (도구가 필요 없으면 'hands', 없으면 null). tools를 주면 그 목록에서 고른다
+      toolFor(id, tools = toolsOf(id)) {
         if (!tools.length) return 'hands';
         return tools.find((t) => hasItem(t)) ?? null;
       },
-      // 잡기. 맞는 도구가 없으면 false. 소모품 도구는 하나 쓴다.
-      catch(id) {
+      // 잡기. 맞는 도구가 없으면 false. 소모품 도구는 하나 쓴다. tool을 주면 그것을 쓴다(채집 자리의 도구)
+      catch(id, tool = c.creature.toolFor(id)) {
         if (state.creatures[id]) return false;
-        const tool = c.creature.toolFor(id);
         if (!tool) return false;
         if (ITEMS[tool]?.consumable) c.take(tool);
         state.creatures[id] = 'caught';
         game.toast(`도감 등록 — ${CREATURES[id].name}`);
         return true;
       },
-      // 건네기: 호감도가 creatures.js의 affinity만큼 오른다
+      // 뽑기: 그 자리에 나올 수 있는 종 가운데 아직 도감에 없는 것을 희귀도 가중치로 하나 (creatures.js rollCreature)
+      roll: (spot, where) => rollCreature(spot, where, (id) => !!state.creatures[id]),
+      // 건네기: 호감도가 creatures.js의 affinity(없으면 희귀도의 기본값)만큼 오른다
       deliver(id, npc = 'campbell') {
         if (state.creatures[id] !== 'caught') return;
         state.creatures[id] = 'delivered';
-        c.affinity.add(npc, CREATURES[id].affinity ?? 1);
+        c.affinity.add(npc, CREATURES[id].affinity ?? rarityOf(id).affinity);
+      },
+      // 무작위 채집 자리(src/spots.js)를 조사함: 도구 확인 → 잡을까? → 그 자리의 종을 뽑아 잡는다. 한 번 조사하면 사라진다
+      async trySpot(ev) {
+        const spot = SPOTS[ev.spot];
+        const tool = c.creature.toolFor(null, spot.tools);
+        if (!tool) {
+          const need = spot.tools.map((t) => ITEMS[t].name).join(' 또는 ');
+          return c.say(`${spot.notice}\n잡으려면 ${need}${josa(need, '이', '가')} 필요하다.`);
+        }
+        const pick = await c.choose(spot.notice, ['잡는다', '그만둔다']);
+        if (pick !== 0) return;
+        ev.done = true;
+        // 러브버그 대발생(data/lovebug.js) 중이면 러브버그만 — 이미 잡았으면 또 러브버그
+        if (ev.outbreak && state.creatures.lovebug) return c.say(OUTBREAK_AGAIN);
+        // 자리가 생길 때 미리 뽑아 둔 종(울음소리 힌트용). 그새 도감에 들어왔으면 다시 뽑는다
+        const id = ev.outbreak ? 'lovebug' : ev.pick && !state.creatures[ev.pick] ? ev.pick : c.creature.roll(ev.spot, ev.where);
+        if (!id) return c.say('손을 뻗었지만 아무것도 없었다.');
+        c.creature.catch(id, tool);
+        const name = CREATURES[id].name;
+        await c.say(`${name}${josa(name, '을', '를')} 잡았다!`);
+      },
+      // 시료 자리(잔해·고인 물)를 조사함: 처음 볼 때 SAMPLE_CHANCE 확률로 「의심스럽다」(그 자리에서 나올 종이 남아 있을 때만).
+      //  의심스러우면 시료병을 하나 써서 시료(아이템)를 떠 간다 → 현미경(c.creature.microscope)에서 무엇인지 안다.
+      //  t = 그 자리의 기록 { searched, suspicious, sampled } — 이벤트(spots.js)나 맵의 잔해 X 칸(world.tileMark)
+      async trySample(t, kind) {
+        const spot = SPOTS[kind];
+        if (t.sampled) return c.say('이미 시료를 떠 갔다.');
+        if (!t.searched) {
+          t.searched = true;
+          t.suspicious = Math.random() < SAMPLE_CHANCE && !!c.creature.roll(kind, null);
+        }
+        if (!t.suspicious) return c.say(spot.plain);
+        if (!hasItem('vial')) return c.say(`${spot.notice}\n시료병이 있으면 떠 갈 수 있을 것 같다.`);
+        const pick = await c.choose(spot.notice, ['시료병에 담는다', '그만둔다']);
+        if (pick !== 0) return;
+        c.take('vial');
+        t.sampled = true;
+        await c.give(spot.sample);
+        await c.say('현미경으로 들여다보면 무엇인지 알 수 있을 것 같다.');
+      },
+      // 현미경 (305호·광학현미경실): 가진 시료 하나를 골라 들여다본다 → 그 시료에서 나올 수 있는 종을 희귀도로 뽑아 도감에
+      async microscope() {
+        const kinds = Object.keys(SPOTS).filter((k) => SPOTS[k].sample && hasItem(SPOTS[k].sample));
+        if (!kinds.length) return c.say('현미경이다. 시료가 있으면 들여다볼 수 있다.');
+        const pick = await c.choose('어떤 시료를 들여다볼까?', [...kinds.map((k) => ITEMS[SPOTS[k].sample].name), '그만둔다']);
+        const kind = kinds[pick];
+        if (!kind) return;
+        c.take(SPOTS[kind].sample);
+        await c.say('시료를 한 방울 떨어뜨리고 렌즈를 들여다본다…');
+        const id = c.creature.roll(kind, null);
+        if (!id) return c.say('아무것도 보이지 않는다.');
+        c.creature.catch(id, 'hands');
+        const name = CREATURES[id].name;
+        await c.say(`렌즈 너머로 ${name}${josa(name, '이', '가')} 움직인다!`);
+      },
+      // 관찰 동물(src/spots.js)을 조사함: 멈춰 있을 때만, 카메라로 사진을 찍어 도감에 남긴다. 동물은 그대로 돌아다닌다
+      async tryObserve(ev) {
+        const id = ev.pick, name = CREATURES[id].name;
+        if (state.creatures[id]) return c.say(`${name}${josa(name, '은', '는')} 이미 사진으로 남겼다.`);
+        if (!ev.resting || ev.walking) return c.say('계속 움직이고 있다. 멈출 때를 기다리자.');
+        if (!hasItem('camera')) return c.say(`${SPOTS.observe.notice}\n카메라가 있으면 사진으로 남길 수 있을 것 같다.`);
+        const pick = await c.choose(SPOTS.observe.notice, ['사진을 찍는다', '그만둔다']);
+        if (pick !== 0) return;
+        c.sfx('shutter');
+        game.flash = { color: 'rgba(255, 255, 255, 0.7)', until: game.time + 0.25, dur: 0.25 };
+        c.creature.catch(id, 'camera');
+        await c.say(`${name}${josa(name, '을', '를')} 사진으로 남겼다!`);
       },
     },
 

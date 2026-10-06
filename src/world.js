@@ -1,6 +1,7 @@
-import { MAPS } from './data/maps.js?v=0.32.0';
-import { state, helpTags } from './state.js?v=0.32.0';
-import { DIRS } from './config.js?v=0.32.0';
+import { MAPS } from './data/maps.js?v=0.37.0';
+import { state, helpTags } from './state.js?v=0.37.0';
+import { DIRS } from './config.js?v=0.37.0';
+import { spawnSpots } from './spots.js?v=0.37.0';
 
 // 타일 글자. 여기 없는 글자(소문자 이벤트 제외)는 tools/check.mjs가 오류로 잡는다.
 export const FLOOR_TILES = new Set(['.', ',', ':', '_', ';', '|', 'P']);
@@ -42,6 +43,16 @@ export class World {
       const n = def.night?.[y]?.[x];
       return n && n !== SAME_TILE && !/[a-z]/.test(def.rows[y][x]) ? n : ch;
     }));
+    // 무작위 채집 자리 (def.creatureSpots) — 들어올 때마다 새로 정한다
+    this.events.push(...spawnSpots(this, FLOOR_TILES));
+    this.marks = new Map(); // 칸마다 남기는 기록 (잔해 X 칸의 시료 조사 등) — 들어올 때마다 새로
+  }
+
+  // 칸 (x, y)의 기록 — 없으면 빈 기록을 만든다
+  tileMark(x, y) {
+    const key = `${x},${y}`;
+    if (!this.marks.has(key)) this.marks.set(key, {});
+    return this.marks.get(key);
   }
 
   // 낮(오프닝)과 밤(본편)은 칸이 다르다 — 지금 때에 맞는 쪽

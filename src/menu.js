@@ -1,12 +1,12 @@
-import { SCREEN_W, SCREEN_H } from './config.js?v=0.32.0';
-import { panel, FONT, SMALL_FONT, drawItemIcon, ICON_SLOT, iconSlot, drawBadge, drawMinimap } from './render.js?v=0.32.0';
-import { wrap } from './dialog.js?v=0.32.0';
-import { state, unreadNotes } from './state.js?v=0.32.0';
-import { ITEMS } from './data/items.js?v=0.32.0';
-import { QUESTS } from './data/quests.js?v=0.32.0';
-import { CREATURES } from './data/creatures.js?v=0.32.0';
-import { NOTES } from './data/notes.js?v=0.32.0';
-import { HELPS } from './data/helps.js?v=0.32.0';
+import { SCREEN_W, SCREEN_H } from './config.js?v=0.37.0';
+import { panel, FONT, SMALL_FONT, drawItemIcon, ICON_SLOT, iconSlot, drawBadge, drawMinimap } from './render.js?v=0.37.0';
+import { wrap } from './dialog.js?v=0.37.0';
+import { state, unreadNotes } from './state.js?v=0.37.0';
+import { ITEMS } from './data/items.js?v=0.37.0';
+import { QUESTS } from './data/quests.js?v=0.37.0';
+import { CREATURES, toolsOf, rarityOf, carriedName } from './data/creatures.js?v=0.37.0';
+import { NOTES } from './data/notes.js?v=0.37.0';
+import { HELPS } from './data/helps.js?v=0.37.0';
 
 // 메뉴 (Esc · 소지품은 E). 왼쪽 탭에서 고르고, Enter로 목록에 들어가 항목을 고르면 아래에 설명이 나온다.
 const TABS = [
@@ -22,8 +22,8 @@ const TABS = [
 const LIST = { x: 190, y: 58, rowH: 30, rows: 7 };
 const DETAIL_Y = 290;
 
-const WHERE = { inside: '연구소 안', outside: '연구소 밖' };
-const creatureIcon = (cr) => ({ icon: cr.icon ?? 'default', image: cr.iconImage });
+const WHERE = { inside: '연구소 안', outside: '연구소 밖', any: '어디서나' };
+const creatureIcon = (cr) => ({ icon: cr.icon ?? 'default', image: cr.iconImage, tint: cr.tint });
 
 // 같은 아이템은 「이름 ×개수」로 묶는다 (처음 얻은 순서대로)
 export function groupedItems() {
@@ -42,7 +42,7 @@ function entries(tab) {
     const items = groupedItems().map(({ id, label }) => ({ label, use: id, icon: id, image: ITEMS[id].iconImage, detail: ITEMS[id].desc ?? '', flavor: ITEMS[id].flavor }));
     // 채집한 소동물 (Campbell에게 건네기 전) — 물건과 구역을 나눈다
     const carried = Object.keys(state.creatures).filter((id) => state.creatures[id] === 'caught')
-      .map((id) => ({ label: CREATURES[id].name, ...creatureIcon(CREATURES[id]), detail: CREATURES[id].desc, flavor: CREATURES[id].flavor }));
+      .map((id) => ({ label: carriedName(id), ...creatureIcon(CREATURES[id]), detail: CREATURES[id].desc, flavor: CREATURES[id].flavor }));
     // 대학원생에게 받은 도움 (data/helps.js)
     const helps = state.helps.map((id) => ({
       label: HELPS[id].name, icon: 'help', detail: `${HELPS[id].from ? `도와준 사람: ${HELPS[id].from}\n` : ''}${HELPS[id].desc ?? ''}`,
@@ -55,16 +55,20 @@ function entries(tab) {
     ];
   }
   if (tab === 'collect') {
+    // 희귀도는 별 개수(오른쪽 끝)와 글자 색으로 — 못 찾은 종도 별은 보인다
     return Object.entries(CREATURES).map(([id, cr]) => {
-      const st = state.creatures[id];
-      if (!st) return { label: '???', icon: 'unknown', dim: true, detail: `${WHERE[cr.where] ?? ''}
+      const st = state.creatures[id], rar = rarityOf(id);
+      const stars = { right: rar.stars, rightColor: rar.color };
+      if (!st) return { label: '???', icon: 'unknown', dim: true, ...stars, detail: `${rar.stars} ${rar.label} · ${WHERE[cr.where] ?? ''}
 힌트: ${cr.hint}` };
-      const tools = (cr.tools ?? []).map((t) => ITEMS[t].name).join(' / ') || '맨손';
+      const tools = toolsOf(id).map((t) => ITEMS[t].name).join(' / ') || '맨손';
       return {
         label: `${st === 'delivered' ? '✓' : '●'} ${cr.name}`,
+        color: rar.color, ...stars,
         ...creatureIcon(cr),
-        detail: `${WHERE[cr.where] ?? ''} · 도구: ${tools}${st === 'delivered' ? ' · Campbell에게 건넴' : ''}
-${cr.desc}`,
+        head: `${rar.stars} ${rar.label} · ${WHERE[cr.where] ?? ''} · ${tools}${st === 'delivered' ? ' · Campbell에게 건넴' : ''}`,
+        latin: { en: cr.en ?? '', species: cr.species ?? '' }, // 영문명 · 학명(기울임체)
+        detail: cr.desc,
         flavor: cr.flavor,
       };
     });
@@ -100,6 +104,21 @@ ${cr.desc}`,
     return [...groups].flatMap(([cat, list]) => [{ section: cat }, ...list]);
   }
   return [];
+}
+
+// 「영문명 · 학명」 한 줄. 학명은 기울임체, 단 「sp.」처럼 종을 정하지 않은 표시는 바로 세운다(학명 표기 관례)
+function drawLatin(ctx, { en, species }, x, y) {
+  ctx.fillStyle = '#a9b8cf';
+  ctx.font = SMALL_FONT;
+  const lead = en && species ? `${en} · ` : en;
+  ctx.fillText(lead, x, y);
+  x += ctx.measureText(lead).width;
+  const [, name, rest] = species.match(/^(.*?)((?:\s+(?:sp|spp)\.)?)$/);
+  ctx.font = `italic ${SMALL_FONT}`;
+  ctx.fillText(name, x, y);
+  x += ctx.measureText(name).width;
+  ctx.font = SMALL_FONT;
+  if (rest) ctx.fillText(rest, x, y);
 }
 
 export class Menu {
@@ -252,10 +271,18 @@ export class Menu {
         }
         ctx.fillStyle = on ? '#ffd98a' : e.dim ? '#6c7686' : '#e8eef8';
         const y = LIST.y + i * LIST.rowH;
-        if (e.icon) drawItemIcon(ctx, e.icon, LIST.x + 8, y - 1, 1, e.image);
-        ctx.fillStyle = on ? '#ffd98a' : e.dim ? '#6c7686' : '#e8eef8';
+        if (e.icon) drawItemIcon(ctx, e.icon, LIST.x + 8, y - 1, 1, e.image, e.tint);
+        ctx.fillStyle = on ? '#ffd98a' : e.dim ? '#6c7686' : e.color ?? '#e8eef8'; // e.color = 소동물 희귀도 색
         const lx = LIST.x + 10 + (e.icon ? ICON_SLOT + 8 : 0);
         ctx.fillText(e.label, lx, y);
+        if (e.right) { // 오른쪽 끝 글자 (소동물 희귀도 별)
+          ctx.fillStyle = e.rightColor ?? ctx.fillStyle;
+          ctx.globalAlpha = e.dim ? 0.5 : 1; // 못 찾은 종도 희귀도 색은 보이게, 조금 흐리게
+          ctx.textAlign = 'right';
+          ctx.fillText(e.right, SCREEN_W - 44, y);
+          ctx.textAlign = 'left';
+          ctx.globalAlpha = 1;
+        }
         if (e.unread) drawBadge(ctx, lx + ctx.measureText(e.label).width + 14, y + 10); // 아직 안 읽은 노트
       });
 
@@ -272,13 +299,20 @@ export class Menu {
           ctx.fillText('Enter — 사용', SCREEN_W - 34, 28);
           ctx.textAlign = 'left';
         }
-        if (e.icon) drawItemIcon(ctx, e.icon, LIST.x + 8, DETAIL_Y - 2, 2, e.image);
-        const lines = wrap(ctx, e.detail, maxW).map((t) => ({ t, flavor: false }));
+        if (e.icon) drawItemIcon(ctx, e.icon, LIST.x + 8, DETAIL_Y - 2, 2, e.image, e.tint);
+        // 소동물: 머리줄(head) → 영문명 · 학명 줄(latin) → 설명. 그 밖에는 설명만
+        const lines = [
+          ...(e.head ? wrap(ctx, e.head, maxW).map((t) => ({ t })) : []),
+          ...(e.latin ? [{ latin: e.latin }] : []),
+          ...wrap(ctx, e.detail, maxW).map((t) => ({ t, flavor: false })),
+        ];
         if (e.flavor) lines.push({ t: '', flavor: true }, ...wrap(ctx, e.flavor, maxW).map((t) => ({ t, flavor: true })));
         lines.slice(0, 8).forEach((l, i) => {
+          const x = LIST.x + 10 + pad, y = DETAIL_Y + i * 22;
+          if (l.latin) return drawLatin(ctx, l.latin, x, y);
           ctx.fillStyle = l.flavor ? '#8fa3bd' : '#c9d6ea';
           ctx.font = l.flavor ? `italic ${SMALL_FONT}` : SMALL_FONT;
-          ctx.fillText(l.t, LIST.x + 10 + pad, DETAIL_Y + i * 22);
+          ctx.fillText(l.t, x, y);
         });
       } else {
         ctx.font = SMALL_FONT;

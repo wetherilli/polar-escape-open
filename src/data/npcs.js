@@ -6,8 +6,8 @@
 //  run    말을 걸었을 때의 스크립트
 // ─────────────────────────────────────────────
 
-import { CREATURES } from './creatures.js?v=0.32.0';
-import { CH1 } from './chapter1.js?v=0.32.0';
+import { CREATURES, carriedName } from './creatures.js?v=0.37.0';
+import { CH1 } from './chapter1.js?v=0.37.0';
 
 const A = '청현'; // 대학원생 A — 예시 인물
 
@@ -17,6 +17,28 @@ const CAMPBELL = 'Campbell';
 
 // 캠벨의 대사: 영어 본문 + 한국어 자막(번역기가 있을 때만 보임)
 const campbell = (c, en, ko) => c.say(en, CAMPBELL, { sub: ko });
+
+// 채집한 소동물·찍은 사진을 하나씩 골라 건넨다 → 소동물마다 반응. 호감도는 숨은 값(화면에 안 보임)
+async function deliverCreatures(c) {
+  for (let carried = c.creature.carried(); carried.length; carried = c.creature.carried()) {
+    const names = carried.map(carriedName); // 관찰 동물은 「○○ 사진」
+    const pick = await c.choose('무엇을 보여 줄까?', [...names, '그만둔다']);
+    if (pick >= carried.length) break;
+    const id = carried[pick];
+    c.creature.deliver(id, 'campbell');
+    await campbell(c, CREATURES[id].reaction.en, CREATURES[id].reaction.ko);
+  }
+}
+
+// 채집통 받기 — 한 번에 세 개. 아직 남아 있으면 주지 않는다 (작가 지침 2026-10-06)
+const JARS_AT_ONCE = 3;
+async function askForJars(c) {
+  if (c.count('jar') > 0) {
+    return campbell(c, "You've still got some jars left. Use those first.", '아직 채집통 남아 있잖아. 그거 먼저 써.');
+  }
+  await campbell(c, 'Jars? Sure. Here, take three.', '채집통? 그래. 여기, 세 개 가져가.');
+  await c.give('jar', JARS_AT_ONCE);
+}
 
 export const NPCS = {
   // 캠벨 — 가장 처음 만나는 NPC. 영국 사람이라 영어로 말한다. 연구지원동 북서동 306호.
@@ -30,20 +52,14 @@ export const NPCS = {
         c.flag('metCampbell', true);
         return CH1.meetCampbell(c); // 첫 만남 (1장 0단계)
       }
-      // 1장 1단계: 렐의 행방 묻기. 묻지 않고 그만두면 아래(소동물 건네기)로
-      if (c.quest.stage('ch1') === 1 && await CH1.askAboutRel(c)) return;
-      // 채집통에 소동물이 있으면 한 종류씩 골라 건넨다 → 소동물마다 반응. 호감도는 숨은 값(화면에 안 보임)
-      let gave = false;
-      for (let carried = c.creature.carried(); carried.length; carried = c.creature.carried()) {
-        const names = carried.map((id) => CREATURES[id].name);
-        const pick = await c.choose('어떤 소동물을 건넬까?', [...names, '그만둔다']);
-        if (pick >= carried.length) break;
-        const id = carried[pick];
-        c.creature.deliver(id, 'campbell');
-        await campbell(c, CREATURES[id].reaction.en, CREATURES[id].reaction.ko);
-        gave = true;
-      }
-      if (!gave) await campbell(c, 'Did you bring another animal?', '혹시 다른 동물을 데려온 거야?');
+      // 대화 선택지: 렐의 행방(1장 1단계에만) · 소동물 건네기(채집통에 있을 때만) · 채집통 받기
+      const options = [];
+      if (c.quest.stage('ch1') === 1) options.push(['렐에 대해 묻는다', CH1.askAboutRel]);
+      if (c.creature.carried().length) options.push(['소동물을 보여 준다', deliverCreatures]);
+      options.push(['채집통을 달라고 한다', askForJars]);
+      const pick = await c.choose('Did you bring another animal?', [...options.map(([label]) => label), '그만둔다'],
+        { speaker: CAMPBELL, sub: '혹시 다른 동물을 데려온 거야?' });
+      if (options[pick]) await options[pick][1](c);
     },
   },
 

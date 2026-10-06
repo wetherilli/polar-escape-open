@@ -13,7 +13,7 @@
 // 맵에는 maps.js에서 crowd('id')로 세운다.
 // ─────────────────────────────────────────────
 
-import { lookFor } from './looks.js?v=0.32.0';
+import { lookFor } from './looks.js?v=0.37.0';
 
 // 복장 — 이름표마다 몇 벌씩
 const RESEARCHER = [

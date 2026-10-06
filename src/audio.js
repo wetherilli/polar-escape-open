@@ -81,6 +81,25 @@ const SFX = {
   caught: (o) => { tone(o, { type: 'sawtooth', f: 330, f2: 60, d: 0.7, v: 0.25 }); noise(o, { d: 0.5, v: 0.2, lp: 1500 }); },
   flash: (o) => noise(o, { d: 0.25, v: 0.18, lp: 5000 }),
   light: (o) => tone(o, { type: 'square', f: 1200, d: 0.03, v: 0.05 }),                    // 손전등 딸깍
+
+  // ── 소동물 울음 (creatures.js의 sound) ── 가까이 가면 들린다. 크기는 거리에 따라 sfx(이름, 세기)
+  cicadaHorse: (o) => { noise(o, { d: 1.6, v: 0.1, lp: 7000 }); tone(o, { type: 'sawtooth', f: 4200, d: 1.5, v: 0.025, attack: 0.3 }); }, // 쏴아아—
+  cicadaRobust: (o) => { for (let i = 0; i < 5; i++) tone(o, { type: 'sawtooth', f: 3100, f2: 2500, d: 0.2, v: 0.05, at: i * 0.26, attack: 0.04 }); }, // 맴 맴 맴
+  cicadaWalker: (o) => { for (let i = 0; i < 9; i++) tone(o, { type: 'sawtooth', f: 2600 + Math.random() * 1600, d: 0.08 + Math.random() * 0.1, v: 0.04, at: i * 0.16 }); }, // 이리저리 바꿔 가며
+  cicadaAutumn: (o) => { for (let i = 0; i < 2; i++) { tone(o, { type: 'sawtooth', f: 3600, d: 0.22, v: 0.045, at: i * 0.7 }); tone(o, { type: 'sawtooth', f: 2900, f2: 2700, d: 0.34, v: 0.045, at: i * 0.7 + 0.24 }); } }, // 쓰름 쓰름
+  cicadaKaempfer: (o) => { noise(o, { d: 1.3, v: 0.06, lp: 4500 }); tone(o, { type: 'square', f: 3000, d: 1.2, v: 0.015, attack: 0.2 }); }, // 지이이—
+  cricket: (o) => { for (let g = 0; g < 2; g++) for (let i = 0; i < 3; i++) tone(o, { type: 'sine', f: 4600, d: 0.045, v: 0.07, at: g * 0.45 + i * 0.07 }); }, // 귀뚤귀뚤
+  cricketSmall: (o) => { for (let i = 0; i < 4; i++) tone(o, { type: 'sine', f: 6200, d: 0.05, v: 0.045, at: i * 0.12 }); },
+  katydid: (o) => { for (let i = 0; i < 10; i++) tone(o, { type: 'square', f: 7000, d: 0.02, v: 0.03, at: i * 0.035 }); }, // 찌르르
+  katydidLong: (o) => { for (let i = 0; i < 26; i++) tone(o, { type: 'square', f: 6600, d: 0.02, v: 0.03, at: i * 0.035 }); }, // 찌르르르르—
+  bulbul: (o) => { for (let i = 0; i < 2; i++) { tone(o, { type: 'sine', f: 2200, f2: 3400, d: 0.18, v: 0.09, at: i * 0.55 }); tone(o, { type: 'sine', f: 3200, f2: 2000, d: 0.24, v: 0.08, at: i * 0.55 + 0.18 }); } }, // 삐이요
+  bulbulLight: (o) => [2800, 3300, 2600, 3500].forEach((f, i) => tone(o, { type: 'sine', f, f2: f * 1.1, d: 0.09, v: 0.07, at: i * 0.12 })),
+  tit: (o) => { for (let g = 0; g < 2; g++) { tone(o, { type: 'sine', f: 5200, d: 0.05, v: 0.06, at: g * 0.5 }); tone(o, { type: 'sine', f: 5200, d: 0.05, v: 0.06, at: g * 0.5 + 0.09 }); tone(o, { type: 'sine', f: 3900, d: 0.16, v: 0.07, at: g * 0.5 + 0.2 }); } }, // 쯔쯔삐
+  redstart: (o) => { for (let i = 0; i < 3; i++) { noise(o, { d: 0.03, v: 0.12, lp: 6000, at: i * 0.3 }); tone(o, { type: 'square', f: 3000, d: 0.025, v: 0.03, at: i * 0.3 }); } }, // 딱, 딱
+  azureMagpie: (o) => { for (let i = 0; i < 3; i++) { noise(o, { d: 0.18, v: 0.1, lp: 3500, at: i * 0.32 }); tone(o, { type: 'sawtooth', f: 1400, f2: 1100, d: 0.18, v: 0.04, at: i * 0.32 }); } }, // 캐애 캐애
+  woodpecker: (o) => { for (let i = 0; i < 16; i++) noise(o, { d: 0.02, v: 0.16 * (1 - i / 20), lp: 1800, at: i * 0.045 }); }, // 드르르르륵
+  cat: (o) => { tone(o, { type: 'sawtooth', f: 520, f2: 860, d: 0.25, v: 0.05, attack: 0.05 }); tone(o, { type: 'sawtooth', f: 860, f2: 480, d: 0.35, v: 0.05, at: 0.24 }); }, // 야옹
+  shutter: (o) => { noise(o, { d: 0.04, v: 0.25, lp: 6000 }); noise(o, { d: 0.05, v: 0.2, lp: 4000, at: 0.08 }); }, // 카메라 찰칵
 };
 
 const fileCache = new Map();
@@ -96,10 +115,13 @@ async function playFile(url, out, loop = false) {
   return s;
 }
 
-export function sfx(name) {
-  if (!ready() || volume.sfx <= 0) return;
-  if (FILES[name]) { playFile(FILES[name], sfxGain).catch(() => {}); return; }
-  SFX[name]?.(sfxGain);
+// gain = 이 소리만의 세기 0~1 (소동물 울음은 거리에 따라 작아진다)
+export function sfx(name, gain = 1) {
+  if (!ready() || volume.sfx <= 0 || gain <= 0) return;
+  let out = sfxGain;
+  if (gain < 1) { out = ac.createGain(); out.gain.value = gain; out.connect(sfxGain); setTimeout(() => out.disconnect(), 4000); }
+  if (FILES[name]) { playFile(FILES[name], out).catch(() => {}); return; }
+  SFX[name]?.(out);
 }
 
 // ── BGM (합성, 임시) ── 박자마다 다음 음을 미리 짜 둔다

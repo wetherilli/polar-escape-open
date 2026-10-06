@@ -1,24 +1,26 @@
-import { TILE, DIRS, MOVE_SPEED, RUN_SPEED, STAMINA_DRAIN, STAMINA_REGEN, STAMINA_RECOVER } from './config.js?v=0.32.0';
-import { Chaser, farthestTile, randomFloor } from './chase.js?v=0.32.0';
-import { sfx, bgm, volume, setVolume } from './audio.js?v=0.32.0';
-import { input } from './input.js?v=0.32.0';
-import { state, resetState, readSave, readAllSaves, hasAnySave, latestSlot, applySave, hasItem, curseEnv, helpMult, revealAround } from './state.js?v=0.32.0';
-import { World, FLOOR_TILES } from './world.js?v=0.32.0';
-import { Player, Follower } from './player.js?v=0.32.0';
-import { Dialog } from './dialog.js?v=0.32.0';
-import { Menu } from './menu.js?v=0.32.0';
-import { QUESTS } from './data/quests.js?v=0.32.0';
-import { ITEMS } from './data/items.js?v=0.32.0';
-import { guideTarget } from './guide.js?v=0.32.0';
-import { prefs, setPref } from './prefs.js?v=0.32.0';
-import { setupTouch, syncTouch } from './touch.js?v=0.32.0';
-import { fader } from './fader.js?v=0.32.0';
-import { createRunner } from './events.js?v=0.32.0';
-import { resetShark } from './data/shark.js?v=0.32.0';
-import { START, MAPS } from './data/maps.js?v=0.32.0';
-import { ENDINGS } from './data/endings.js?v=0.32.0';
-import { PATCH, VERSION } from './data/patch.js?v=0.32.0';
-import { camera, drawWorld, drawLighting, drawHUD, drawTitle, drawEnding, drawPicture, drawToast, drawChaseBorder, drawChaserGlow, drawGameOver, drawBubbles, drawSettings, GEAR_BUTTON, drawSlots, SLOT_BOX, drawGuideArrow } from './render.js?v=0.32.0';
+import { TILE, DIRS, MOVE_SPEED, RUN_SPEED, STAMINA_DRAIN, STAMINA_REGEN, STAMINA_RECOVER } from './config.js?v=0.37.0';
+import { Chaser, farthestTile, randomFloor } from './chase.js?v=0.37.0';
+import { sfx, bgm, volume, setVolume } from './audio.js?v=0.37.0';
+import { input } from './input.js?v=0.37.0';
+import { state, resetState, readSave, readAllSaves, hasAnySave, latestSlot, applySave, hasItem, curseEnv, helpMult, revealAround } from './state.js?v=0.37.0';
+import { World, FLOOR_TILES } from './world.js?v=0.37.0';
+import { Player, Follower } from './player.js?v=0.37.0';
+import { Dialog } from './dialog.js?v=0.37.0';
+import { Menu } from './menu.js?v=0.37.0';
+import { QUESTS } from './data/quests.js?v=0.37.0';
+import { ITEMS } from './data/items.js?v=0.37.0';
+import { CREATURES } from './data/creatures.js?v=0.37.0';
+import { chapterOf, OUTBREAK_NOTICE } from './data/lovebug.js?v=0.37.0';
+import { guideTarget } from './guide.js?v=0.37.0';
+import { prefs, setPref } from './prefs.js?v=0.37.0';
+import { setupTouch, syncTouch } from './touch.js?v=0.37.0';
+import { fader } from './fader.js?v=0.37.0';
+import { createRunner } from './events.js?v=0.37.0';
+import { resetShark } from './data/shark.js?v=0.37.0';
+import { START, MAPS } from './data/maps.js?v=0.37.0';
+import { ENDINGS } from './data/endings.js?v=0.37.0';
+import { PATCH, VERSION } from './data/patch.js?v=0.37.0';
+import { camera, drawWorld, drawLighting, drawOverDark, drawHUD, drawTitle, drawEnding, drawPicture, drawToast, drawChaseBorder, drawChaserGlow, drawGameOver, drawBubbles, drawSettings, GEAR_BUTTON, drawSlots, SLOT_BOX, drawGuideArrow } from './render.js?v=0.37.0';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -251,11 +253,88 @@ function exploreHere() {
   revealAround(w.id, w.w, w.h, p.x, p.y);
 }
 
+// 소동물 울음 힌트: 채집 자리에 뽑아 둔 종(ev.pick)이 우는 종이면 가까이 갈수록 크게 들린다.
+//  종마다 처음 HEAR_NEAR칸 안에 들어오면 한 번 대화창으로도 알려 준다(creatures.js heard) — 들은 종은 flags.heard에 남는다
+const HEAR_FAR = 8, HEAR_NEAR = 4;
+function updateCreatureSounds() {
+  if (state.flags.day || game.menu.open || game.settings) return;
+  // 러브버그 대발생(data/lovebug.js): 그날·그 장에 대발생한 맵에 처음 들어오면 한 번 알려 준다
+  if (game.world.outbreak && !runner.busy && !game.dialog.active) {
+    const d = new Date(), key = `${game.world.id}/${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}/${chapterOf(state)}`;
+    if (state.flags.lovebugNotice !== key) {
+      state.flags.lovebugNotice = key;
+      runner.run((c) => c.say(OUTBREAK_NOTICE));
+    }
+  }
+  const p = game.player;
+  for (const ev of game.world.visibleEvents()) {
+    const cr = ev.pick && CREATURES[ev.pick];
+    // 채집 자리는 이미 도감에 있는 종이면 울지 않는다(다시 뽑히므로). 관찰 동물(새·고양이)은 찍은 뒤에도 계속 운다
+    if (!cr?.sound || (state.creatures[ev.pick] && !ev.animal)) continue;
+    const d = Math.hypot(ev.x - p.x, ev.y - p.y);
+    if (d > HEAR_FAR) continue;
+    ev.soundAt ??= game.time + Math.random() * 1.5;
+    if (game.time >= ev.soundAt) {
+      sfx(cr.sound, 1 - d / (HEAR_FAR + 1));
+      ev.soundAt = game.time + 2.5 + Math.random() * 2.5;
+    }
+    const heard = state.flags.heard ?? (state.flags.heard = []);
+    if (d <= HEAR_NEAR && cr.heard && !heard.includes(ev.pick) && !runner.busy && !game.dialog.active) {
+      heard.push(ev.pick);
+      runner.run((c) => c.say(cr.heard));
+    }
+  }
+}
+
+// 관찰 동물(새·너구리·고양이, src/spots.js): 쉬었다가 → 몇 번 방향을 바꿔 걷고 → 다시 쉰다. 멈춰 있을 때(ev.resting)만 사진을 찍을 수 있다.
+//  대화·이벤트·메뉴 중에는 새로 걷기 시작하지 않는다(사진을 찍는 동안 그대로 멈춰 있다)
+const randIn = ([lo, hi]) => lo + Math.random() * (hi - lo);
+const randInt = ([lo, hi]) => lo + Math.floor(Math.random() * (hi - lo + 1));
+function animalDirs(ev, m, steps) {
+  const w = game.world, p = game.player;
+  return WANDER_DIRS.filter((d) => {
+    for (let s = 1; s <= steps; s++) {
+      const nx = ev.x + DIRS[d].x * s, ny = ev.y + DIRS[d].y * s;
+      if (Math.abs(nx - ev.home.x) + Math.abs(ny - ev.home.y) > m.radius || !m.tiles.includes(w.tileAt(nx, ny))
+        || w.isBlocked(nx, ny) || (p.x === nx && p.y === ny)) return false;
+    }
+    return true;
+  });
+}
+async function walkAnimal(ev, m) {
+  const fly = m.fly && Math.random() < m.fly.chance;
+  ev.flying = fly;
+  for (let i = randInt(fly ? [1, 1] : m.legs); i > 0; i--) {
+    const steps = randInt(fly ? m.fly.steps : m.steps);
+    const dirs = animalDirs(ev, m, steps);
+    if (!dirs.length) break;
+    const dir = dirs[Math.floor(Math.random() * dirs.length)];
+    if (dir === 'left' || dir === 'right') ev.face = dir;
+    await game.moveEvent(ev.id, dir, steps, fly ? m.fly.speed : m.speed);
+  }
+  ev.flying = false;
+}
+function updateAnimals() {
+  if (runner.busy || game.dialog.active || game.menu.open || game.autoMove) return;
+  for (const ev of game.world.visibleEvents()) {
+    const m = ev.moves;
+    if (!m || ev.walking) continue;
+    ev.home ??= { x: ev.x, y: ev.y };
+    ev.restUntil ??= game.time + randIn(m.rest);
+    ev.resting = game.time < ev.restUntil;
+    if (ev.resting) continue;
+    ev.walking = true;
+    walkAnimal(ev, m).then(() => { ev.walking = false; ev.resting = true; ev.restUntil = game.time + randIn(m.rest); });
+  }
+}
+
 function updatePlay(dt) {
   exploreHere();
   if (game.toasts.length && (game.toasts[0].t += dt) > TOAST_TIME) game.toasts.shift();
   updateBubbles();
   updateWander();
+  updateAnimals();
+  updateCreatureSounds();
   if (game.eventMoves.length) updateEventMoves(dt);
   if (game.settings) return updateSettings(); // 메뉴의 설정 탭에서 연 설정 화면 (시간이 멈춘다)
   if (game.dialog.active) return game.dialog.update(dt, input);
@@ -276,6 +355,8 @@ function updatePlay(dt) {
     if (ev?.trigger === 'action') {
       if (ev.turnToPlayer) ev.dir = OPPOSITE[p.dir];
       runner.run(ev.run);
+    } else if (!ev && !state.flags.day && game.world.tileAt(f.x, f.y) === 'X') { // 맵에 칠한 잔해 — 시료를 뜰 수 있다
+      runner.run((c) => c.creature.trySample(game.world.tileMark(f.x, f.y), 'rubble'));
     }
   }
   if (!runner.busy) updateChase(dt);
@@ -681,6 +762,7 @@ function draw() {
         });
       drawLighting(ctx, game.player.px * TILE - cam.x + TILE / 2, game.player.py * TILE - cam.y + TILE / 2, L.radius, L.darkness, L.beam, glows);
     }
+    if (!game.blackout) drawOverDark(ctx, game.world, cam, t); // 어둠 위에도 보이는 것 — 강조된 나무·나는 빛 (채집 자리)
     const tint = !state.flags.day && !game.blackout && curseEnv().tint; // 저주 단계·새벽의 화면 색조
     if (tint) { ctx.fillStyle = tint; ctx.fillRect(0, 0, canvas.width, canvas.height); }
     if (!game.picture) drawBubbles(ctx, game.bubbles, cam, t);
