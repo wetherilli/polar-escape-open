@@ -13,9 +13,9 @@
 
 export const MOODS = ['보통', '기쁨', '놀람', '슬픔', '화남', '걱정'];
 
-import { NPCS } from './npcs.js?v=0.37.0';
-import { STAFF } from './prologue.js?v=0.37.0';
-import { LOOKS, lookFor } from './looks.js?v=0.37.0';
+import { NPCS } from './npcs.js?v=0.38.0';
+import { STAFF } from './prologue.js?v=0.38.0';
+import { LOOKS, lookFor } from './looks.js?v=0.38.0';
 
 export const PORTRAITS = {
   // 그림 파일이 생기면 여기에: '수오': { image: 'assets/portraits/suo.png' },

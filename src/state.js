@@ -1,5 +1,5 @@
-import { CURSE } from './data/curse.js?v=0.37.0';
-import { HELPS } from './data/helps.js?v=0.37.0';
+import { CURSE } from './data/curse.js?v=0.38.0';
+import { HELPS } from './data/helps.js?v=0.38.0';
 
 // 세이브 대상이 되는 진행 상태.
 //  flags   이야기 진행 플래그

@@ -1,16 +1,16 @@
-import { state, hasItem, saveGame, readSave, readAllSaves, curseLevel } from './state.js?v=0.37.0';
-import { CURSE } from './data/curse.js?v=0.37.0';
-import { NOTES } from './data/notes.js?v=0.37.0';
-import { HELPS } from './data/helps.js?v=0.37.0';
-import { MAPS } from './data/maps.js?v=0.37.0';
-import { ITEMS } from './data/items.js?v=0.37.0';
-import { QUESTS } from './data/quests.js?v=0.37.0';
-import { CREATURES, SPOTS, toolsOf, rarityOf, rollCreature } from './data/creatures.js?v=0.37.0';
-import { OUTBREAK_AGAIN } from './data/lovebug.js?v=0.37.0';
-import { fader } from './fader.js?v=0.37.0';
-import { sfx } from './audio.js?v=0.37.0';
+import { state, hasItem, saveGame, readSave, readAllSaves, curseLevel } from './state.js?v=0.38.0';
+import { CURSE } from './data/curse.js?v=0.38.0';
+import { NOTES } from './data/notes.js?v=0.38.0';
+import { HELPS } from './data/helps.js?v=0.38.0';
+import { MAPS } from './data/maps.js?v=0.38.0';
+import { ITEMS } from './data/items.js?v=0.38.0';
+import { QUESTS } from './data/quests.js?v=0.38.0';
+import { CREATURES, SPOTS, toolsOf, rarityOf, rollCreature } from './data/creatures.js?v=0.38.0';
+import { OUTBREAK_AGAIN } from './data/lovebug.js?v=0.38.0';
+import { fader } from './fader.js?v=0.38.0';
+import { sfx } from './audio.js?v=0.38.0';
 
-import { josa } from './text.js?v=0.37.0';
+import { josa } from './text.js?v=0.38.0';
 
 // 잔해·고인 물을 처음 조사할 때 「의심스럽다」가 나올 확률 (시료 — creatures.js SPOTS.rubble·puddle)
 const SAMPLE_CHANCE = 0.4;

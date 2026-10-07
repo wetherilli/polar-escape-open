@@ -13,9 +13,9 @@
 //  observe: true면 관찰 동물(새·너구리·고양이)도 — 아래 spawnAnimals
 // ─────────────────────────────────────────────
 
-import { state } from './state.js?v=0.37.0';
-import { CREATURES, rollCreature, rarityOf } from './data/creatures.js?v=0.37.0';
-import { lovebugOutbreak } from './data/lovebug.js?v=0.37.0';
+import { state } from './state.js?v=0.38.0';
+import { CREATURES, rollCreature, rarityOf } from './data/creatures.js?v=0.38.0';
+import { lovebugOutbreak } from './data/lovebug.js?v=0.38.0';
 
 const ORTHO = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const OUTBREAK_KINDS = ['ground', 'tree', 'flying']; // 러브버그 대발생 때 러브버그만 나오는 자리

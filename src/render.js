@@ -1,8 +1,8 @@
-import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.37.0';
-import { ITEMS } from './data/items.js?v=0.37.0';
-import { lookFor } from './data/looks.js?v=0.37.0';
-import { SOLID_TILES as SOLID } from './world.js?v=0.37.0';
-import { isExplored } from './state.js?v=0.37.0';
+import { TILE, SCREEN_W, SCREEN_H } from './config.js?v=0.38.0';
+import { ITEMS } from './data/items.js?v=0.38.0';
+import { lookFor } from './data/looks.js?v=0.38.0';
+import { SOLID_TILES as SOLID } from './world.js?v=0.38.0';
+import { isExplored } from './state.js?v=0.38.0';
 
 export const FONT = '18px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
 export const SMALL_FONT = '14px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
@@ -141,10 +141,9 @@ const PIXEL_TILES = {
     rect(g, ['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.04)'][n], 0, 0, 32, 2);
     if (r(5, 5, 5) < 0.25) rect(g, ['#6c727b', '#24272d'][n], 12, 12, 8, 8);
   },
-  // 주차장: 아스팔트 + 칸 왼쪽의 흰 주차선
+  // 주차장 바닥: 아스팔트 (흰 주차선은 parkingTile이 자리에 맞춰 긋는다)
   parking(g, n, r) {
     PIXEL_TILES.road(g, n, r);
-    rect(g, ['#e8e8e2', '#5d5f5a'][n], 0, 2, 2, 28);
   },
   // 벽: 위쪽 마감(밝은 띠) + 그 아래 그늘, 16px마다 패널 이음매, 잔 얼룩
   wall(g, n, r) {
@@ -409,6 +408,20 @@ function bigTreeTile(ctx, x, y, o) {
   const run = (dx, dy) => { let k = 0; while (o.world.tiles[o.ty + dy * (k + 1)]?.[o.tx + dx * (k + 1)] === 'B') k++; return k; };
   ctx.drawImage(tree, (run(-1, 0) % 2) * T, (run(0, -1) % 2) * T, T, T, x, y, T, T);
 }
+// 주차장: 이어진 | 칸을 왼쪽 위부터 가로 2 × 세로 3칸씩 한 자리로 보고, 자리 사이에 흰 줄을 긋는다
+//  (세워 둔 차 하나가 한 자리 — maps.js cars, world.js dayCarSlots와 같은 나눔)
+const parkingBase = drawPixelTile('parking');
+function parkingTile(ctx, x, y, o) {
+  parkingBase(ctx, x, y, o);
+  const line = day(o) ? '#e8e8e2' : '#5d5f5a';
+  if (!o.world) return rect(ctx, line, x, y + 2, 2, 28); // 편집기 견본
+  const lot = (dx, dy) => o.world.tiles[o.ty + dy]?.[o.tx + dx] === '|';
+  const run = (dx, dy) => { let k = 0; while (lot(dx * (k + 1), dy * (k + 1))) k++; return k; };
+  const sy = run(0, -1) % 3; // 자리 안에서 몇 번째 줄 (0 = 맨 위)
+  const y0 = sy === 0 ? 3 : 0, y1 = sy === 2 || !lot(0, 1) ? 29 : 32; // 자리 끝은 조금 띄운다
+  if (run(-1, 0) % 2 === 0) rect(ctx, line, x, y + y0, 2, y1 - y0);
+  if (!lot(1, 0)) rect(ctx, line, x + 30, y + y0, 2, y1 - y0);
+}
 
 const TILES = {
   '.': floor,
@@ -421,7 +434,7 @@ const TILES = {
   T: drawPixelTile('tree'),       // 나무 (통과 불가)
   B: bigTreeTile,                 // 큰 나무 (2×2 칸 한 그루, 통과 불가)
   '*': drawPixelTile('flowerbed'), // 화단 (통과 불가)
-  '|': drawPixelTile('parking'),  // 주차장 (주차선)
+  '|': parkingTile,               // 주차장 (주차선)
   P: drawPixelTile('pilotis'),    // 필로티 (건물 1층을 차가 지나감)
   H(ctx, x, y, o) { // 건물 외벽 — 낮: 밝은 외장 + 하늘이 비친 유리 / 밤: 맵의 litWindows 칸만 불이 켜져 있다(야근 중인 방)
     facade(ctx, x, y, o);
@@ -663,6 +676,125 @@ function rubbleTile(ctx, x, y, o) {
   ctx.drawImage(damageCanvas('rubble', Math.floor(hash(o.tx, o.ty, 13) * DAMAGE_VARIANTS)), x, y);
 }
 
+// ── 세워 둔 차 ──
+// 위에서 내려다본 차, 앞이 위. 64×96(가로 2 × 세로 3칸) 기준으로 그리고, 이벤트 size가 다르면 그만큼 늘이거나 줄인다.
+//  w 폭, len 길이, r 모서리, hood 보닛, front 앞유리, roof 지붕, rear 뒷유리 (나머지는 트렁크), pillars 옆 창 기둥 자리(지붕 안 비율)
+const CAR_BOX = [64, 96];
+const CAR_KINDS = {
+  compact: { w: 40, len: 72, r: 9, hood: 14, front: 13, roof: 28, rear: 10, pillars: [0.5] },                     // 경차
+  sedan: { w: 44, len: 88, r: 8, hood: 24, front: 14, roof: 24, rear: 12, pillars: [0.48] },                       // 세단
+  suv: { w: 48, len: 90, r: 7, hood: 19, front: 14, roof: 42, rear: 9, pillars: [0.36, 0.74], rails: true },       // SUV
+  minivan: { w: 50, len: 94, r: 7, hood: 14, front: 16, roof: 54, rear: 8, pillars: [0.26, 0.6, 0.88],             // 승합차 (카니발)
+    rails: true, slide: true, sunroof: true, pillar: '#1d2026' },
+  truck: { w: 48, len: 94, r: 5, hood: 5, front: 11, roof: 18, rear: 0, pillars: [], bed: true },                  // 1톤 트럭
+};
+const CAR_COLORS = {
+  white: '#eef0ee', pearl: '#f4f1e8', silver: '#b9bec4', gray: '#6f757c', black: '#23262b',
+  navy: '#2b3a5c', red: '#a8282c', blue: '#3a6db0', beige: '#c9b48e', green: '#3f5e4a',
+};
+// 색 a를 b 쪽으로 k만큼 섞기 (#rrggbb)
+function mixHex(a, b, k) {
+  const p = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const [ca, cb] = [p(a), p(b)];
+  return '#' + ca.map((v, i) => Math.round(v + (cb[i] - v) * k).toString(16).padStart(2, '0')).join('');
+}
+const rrect = (ctx, color, x, y, w, h, r) => { ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fill(); };
+// 사다리꼴 유리: 위 폭 tw, 아래 폭 bw (가운데 cx 기준)
+function trap(ctx, color, cx, y, tw, bw, h) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(cx - tw / 2, y); ctx.lineTo(cx + tw / 2, y); ctx.lineTo(cx + bw / 2, y + h); ctx.lineTo(cx - bw / 2, y + h);
+  ctx.closePath(); ctx.fill();
+}
+
+// 차 한 대 — 맵(SPRITES.car)과 개발용 차고(tools/cars.html)가 같이 쓴다.
+//  o = { kind, color(이름 또는 #rrggbb), facing: 'up'|'down', day, w, h(픽셀, 기본 64×96) }
+export function drawCarSprite(ctx, x, y, o) {
+  const { kind = 'sedan', color = 'white', facing = 'up', day: isDay = true, w = CAR_BOX[0], h = CAR_BOX[1] } = o;
+  ctx.save();
+  if (facing === 'down') { ctx.translate(0, y * 2 + h); ctx.scale(1, -1); } // 앞이 아래로
+  drawCar(ctx, x, y, w, h, CAR_KINDS[kind] ?? CAR_KINDS.sedan, CAR_COLORS[color] ?? color, isDay);
+  ctx.restore();
+}
+export const CAR_KIND_NAMES = { compact: '경차', sedan: '세단', suv: 'SUV', minivan: '승합차(카니발)', truck: '1톤 트럭' };
+export const CAR_COLOR_NAMES = () => Object.keys(CAR_COLORS);
+
+// (x, y) 칸 왼쪽 위, 칸 bw×bh 픽셀 안에 차 한 대. 앞이 위
+function drawCar(ctx, x, y, bw, bh, k, paint, isDay) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (bw !== CAR_BOX[0] || bh !== CAR_BOX[1]) ctx.scale(bw / CAR_BOX[0], bh / CAR_BOX[1]);
+  const night = (c, f = 0.55) => (isDay ? c : mixHex(c, '#0b1020', f)); // 밤에는 어둡고 푸르게
+  const body = night(paint), lite = night(mixHex(paint, '#ffffff', 0.4)), dark = night(mixHex(paint, '#000000', 0.32));
+  const glass = isDay ? '#2c3b4a' : '#0b111a', shine = isDay ? 'rgba(205,228,248,0.5)' : 'rgba(120,150,190,0.16)';
+  const metal = isDay ? '#a3a9b1' : '#2a2e36', tire = '#111317';
+  const W = k.w, H = k.len, cx = CAR_BOX[0] / 2, L = cx - W / 2, top = Math.round((CAR_BOX[1] - H) / 2), bot = top + H;
+  const fy = top + k.hood, ry = fy + k.front, by = ry + k.roof; // 앞유리·지붕·뒷부분이 시작하는 줄
+
+  rrect(ctx, 'rgba(0,0,0,0.3)', L + 2, top + 3, W + 1, H, k.r);                    // 그림자
+  for (const wy of [top + 9, bot - 26]) {                                            // 바퀴 (차체 밖으로 조금)
+    rrect(ctx, tire, L - 2, wy, 6, 17, 2); rrect(ctx, tire, L + W - 4, wy, 6, 17, 2);
+  }
+  // 차체 + 왼쪽 빛·오른쪽 그늘(차체 모양 안에서만)
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(L, top, W, H, k.r); ctx.clip();
+  rect(ctx, body, L, top, W, H);
+  rect(ctx, lite, L, top, 2, H); rect(ctx, dark, L + W - 2, top, 2, H);
+  if (isDay) rect(ctx, 'rgba(255,255,255,0.18)', L, top, W, 2);                      // 앞 끝 반사
+  ctx.restore();
+
+  // 앞: 전조등·그릴·보닛 줄
+  const lamp = isDay ? '#fff3c4' : '#4a4a3c';
+  rrect(ctx, lamp, L + 3, top + 2, 10, 4, 2); rrect(ctx, lamp, L + W - 13, top + 2, 10, 4, 2);
+  if (!k.bed) rect(ctx, dark, cx - 7, top + 1, 14, 2);
+  if (k.hood > 12) { rect(ctx, dark, L + 10, top + 7, 1, k.hood - 10); rect(ctx, dark, L + W - 11, top + 7, 1, k.hood - 10); }
+  rect(ctx, dark, L + 3, fy - 2, W - 6, 1);                                           // 보닛 끝 이음매
+
+  // 사이드미러
+  const mir = night(paint === CAR_COLORS.black ? '#23262b' : mixHex(paint, '#000000', 0.15));
+  rrect(ctx, mir, L - 4, fy + 2, 6, 4, 1); rrect(ctx, mir, L + W - 2, fy + 2, 6, 4, 1);
+
+  // 앞유리 (보닛 쪽이 넓다) + 와이퍼 + 빛
+  trap(ctx, glass, cx, fy, W - 8, W - 12, k.front);
+  rect(ctx, isDay ? '#1a222b' : '#06090e', L + 8, fy + 1, 10, 1); rect(ctx, isDay ? '#1a222b' : '#06090e', cx + 1, fy + 1, 10, 1);
+  ctx.fillStyle = shine;
+  ctx.beginPath(); ctx.moveTo(L + 9, fy + k.front - 2); ctx.lineTo(L + 14, fy + 3); ctx.lineTo(L + 18, fy + 3); ctx.lineTo(L + 13, fy + k.front - 2); ctx.fill();
+
+  // 지붕 + 옆 창 + 기둥
+  const sideH = k.roof + (k.bed ? 0 : k.rear);
+  rect(ctx, glass, L + 2, ry, 4, sideH - 2); rect(ctx, glass, L + W - 6, ry, 4, sideH - 2);
+  const pil = night(k.pillar ?? mixHex(paint, '#000000', 0.2), k.pillar ? 0.3 : 0.55);
+  for (const p of k.pillars) {
+    const py = ry + Math.round(k.roof * p);
+    rect(ctx, pil, L + 2, py, 4, 3); rect(ctx, pil, L + W - 6, py, 4, 3);
+  }
+  rrect(ctx, night(mixHex(paint, '#ffffff', 0.12)), L + 6, ry, W - 12, k.roof, 3);
+  rect(ctx, body, L + 6, ry + k.roof - 2, W - 12, 2);                                 // 지붕 끝 그늘
+  if (k.sunroof) { rrect(ctx, glass, cx - 9, ry + 5, 18, 14, 2); rect(ctx, shine, cx - 6, ry + 7, 3, 9); }
+  if (k.rails) { rect(ctx, metal, L + 8, ry + 3, 2, k.roof - 6); rect(ctx, metal, L + W - 10, ry + 3, 2, k.roof - 6); }
+  if (k.slide) { // 슬라이딩 문 레일 (옆 창 아래, 차체 가장자리)
+    const sy = ry + Math.round(k.roof * 0.6);
+    rect(ctx, dark, L, sy, 2, Math.round(k.roof * 0.28)); rect(ctx, dark, L + W - 2, sy, 2, Math.round(k.roof * 0.28));
+  }
+
+  if (k.bed) { // 1톤 트럭: 캡 뒤 틈 + 짐칸(테두리·바닥·가로 살·뒷문)
+    rect(ctx, '#07090c', L + 1, by, W - 2, 3);
+    rect(ctx, night('#c9cdd2'), L + 1, by + 3, W - 2, bot - by - 3);
+    rect(ctx, night('#767c83'), L + 4, by + 6, W - 8, bot - by - 10);
+    for (let sy = by + 12; sy < bot - 6; sy += 8) rect(ctx, night('#5b6168'), L + 4, sy, W - 8, 1);
+    rect(ctx, night('#9aa0a6'), L + 1, bot - 4, W - 2, 1);
+  } else {
+    trap(ctx, glass, cx, by, W - 12, W - 8, k.rear);                                  // 뒷유리 (트렁크 쪽이 넓다)
+    rect(ctx, shine, L + W - 15, by + 2, 4, Math.max(2, k.rear - 4));
+    if (bot - (by + k.rear) > 8) rect(ctx, dark, L + 4, by + k.rear + 2, W - 8, 1);  // 트렁크 이음매
+  }
+  // 뒤: 미등·번호판
+  const tail = isDay ? '#c62a2e' : '#4a1418';
+  rrect(ctx, tail, L + 2, bot - 5, 10, 4, 1); rrect(ctx, tail, L + W - 12, bot - 5, 10, 4, 1);
+  rect(ctx, isDay ? '#e9edf0' : '#2a2e36', cx - 6, bot - 3, 12, 3);
+  ctx.restore();
+}
+
 // o = { t, state, ev } — ev는 이벤트 정의 전체(커스텀 필드 포함)
 const SPRITES = {
   // ── 범용 ──
@@ -777,6 +909,11 @@ const SPRITES = {
     rect(ctx, '#59606e', x + 1, y, T - 2, T);
     rect(ctx, '#474d59', x + 15, y, 2, T);
     rect(ctx, o.state.flags[o.ev.lockFlag] ? '#5dff8a' : '#ff4a4a', x + 24, y + 13, 4, 4);
+  },
+  // ── 차 ── (맵의 cars: 이벤트 size만큼의 칸, 위에서 내려다본 모습)
+  car(ctx, x, y, o) {
+    const [sw, sh] = o.ev.size ?? [2, 3];
+    drawCarSprite(ctx, x, y, { ...o.ev, w: sw * T, h: sh * T, day: day(o) });
   },
   // ── 소동물 ──
   // 채집 지점: 풀잎이 가끔 살랑이고 작은 점이 꼼지락댄다 (일부러 눈에 덜 띄게)

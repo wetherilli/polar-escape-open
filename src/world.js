@@ -1,13 +1,47 @@
-import { MAPS } from './data/maps.js?v=0.37.0';
-import { state, helpTags } from './state.js?v=0.37.0';
-import { DIRS } from './config.js?v=0.37.0';
-import { spawnSpots } from './spots.js?v=0.37.0';
+import { MAPS } from './data/maps.js?v=0.38.0';
+import { state, helpTags } from './state.js?v=0.38.0';
+import { DIRS } from './config.js?v=0.38.0';
+import { spawnSpots } from './spots.js?v=0.38.0';
 
 // 타일 글자. 여기 없는 글자(소문자 이벤트 제외)는 tools/check.mjs가 오류로 잡는다.
 export const FLOOR_TILES = new Set(['.', ',', ':', '_', ';', '|', 'P']);
 export const SOLID_TILES = new Set(['#', 'W', '=', 'R', 'G', 'S', 'H', 'F', 'V', 'T', 'B', '*', 'X']);
 // 밤 겹침층(def.night)에서 「낮과 같음」을 뜻하는 글자
 export const SAME_TILE = ' ';
+
+const covers = (ev, x, y) => x >= ev.x && y >= ev.y && x < ev.x + (ev.size?.[0] ?? 1) && y < ev.y + (ev.size?.[1] ?? 1);
+
+// 세워 둔 차 한 대의 크기 = 주차 자리 하나 (가로 2 × 세로 3칸)
+const CAR_SIZE = [2, 3];
+// 낮 차: 이어진 주차 칸(|)을 왼쪽 위부터 가로 2 × 세로 3칸씩 자리로 나누고(render.js parkingTile과 같은 나눔),
+// 밤 차가 없는 자리를 rate 확률로 채운다
+const DAY_CAR_KINDS = ['sedan', 'sedan', 'sedan', 'suv', 'suv', 'compact', 'minivan', 'truck'];
+const DAY_CAR_COLORS = ['white', 'white', 'white', 'pearl', 'black', 'black', 'gray', 'gray', 'silver', 'silver', 'navy', 'blue', 'red', 'beige', 'green'];
+const rnd = (x, y, s) => {
+  let h = Math.imul(x * 374761393 + y * 668265263 + s * 982451653, 1274126177);
+  h ^= h >>> 15;
+  return (Math.imul(h, 2246822519) >>> 0) / 4294967296;
+};
+function dayCarSlots(world, rate) {
+  const isLot = (x, y) => world.dayTiles[y]?.[x] === '|';
+  const run = (x, y, dx, dy) => { let k = 0; while (isLot(x + dx * (k + 1), y + dy * (k + 1))) k++; return k; };
+  const [sw, sh] = CAR_SIZE, out = [];
+  for (let y = 0; y < world.h; y++) {
+    for (let x = 0; x < world.w; x++) {
+      if (!isLot(x, y) || run(x, y, -1, 0) % sw || run(x, y, 0, -1) % sh) continue; // 자리의 왼쪽 위 칸만
+      const cells = [];
+      for (let dy = 0; dy < sh; dy++) for (let dx = 0; dx < sw; dx++) cells.push([x + dx, y + dy]);
+      if (!cells.every(([cx, cy]) => isLot(cx, cy))) continue; // 모자란 자리(끝에 남는 칸)
+      if (cells.some(([cx, cy]) => world.events.some((e) => covers(e, cx, cy))) || rnd(x, y, 1) >= rate) continue;
+      out.push({
+        x, y, facing: rnd(x, y, 2) < 0.5 ? 'up' : 'down',
+        kind: DAY_CAR_KINDS[Math.floor(rnd(x, y, 3) * DAY_CAR_KINDS.length)],
+        color: DAY_CAR_COLORS[Math.floor(rnd(x, y, 4) * DAY_CAR_COLORS.length)],
+      });
+    }
+  }
+  return out;
+}
 
 export class World {
   load(id) {
@@ -43,6 +77,16 @@ export class World {
       const n = def.night?.[y]?.[x];
       return n && n !== SAME_TILE && !/[a-z]/.test(def.rows[y][x]) ? n : ch;
     }));
+    // 세워 둔 차 (def.cars) — 칸 글자 없이 자리만 적는다. x·y는 자리 왼쪽 위, 가로 2 × 세로 3칸을 막는다
+    for (const [i, c] of (def.cars ?? []).entries()) {
+      this.events.push({ sprite: 'car', solid: true, trigger: 'none', size: CAR_SIZE, ...c, id: `car_${i}` });
+    }
+    // 낮(오프닝)에만 더 서 있는 차 (def.dayCars = 빈 주차 칸을 채울 비율) — 칸마다 정해진 난수라 늘 같은 배치
+    if (def.dayCars) {
+      for (const [i, c] of dayCarSlots(this, def.dayCars).entries()) {
+        this.events.push({ sprite: 'car', solid: true, trigger: 'none', size: CAR_SIZE, ...c, id: `daycar_${i}`, visible: (s) => !!s.flags.day });
+      }
+    }
     // 무작위 채집 자리 (def.creatureSpots) — 들어올 때마다 새로 정한다
     this.events.push(...spawnSpots(this, FLOOR_TILES));
     this.marks = new Map(); // 칸마다 남기는 기록 (잔해 X 칸의 시료 조사 등) — 들어올 때마다 새로
@@ -69,8 +113,9 @@ export class World {
     return this.events.filter((ev) => (!ev.visible || ev.visible(state)) && (!ev.hiddenTag || revealed.includes(ev.hiddenTag)));
   }
 
+  // size: [폭, 높이]가 있는 이벤트(차 등)는 (x, y)부터 그만큼의 칸을 다 차지한다
   eventAt(x, y) {
-    return this.visibleEvents().find((ev) => ev.x === x && ev.y === y) ?? null;
+    return this.visibleEvents().find((ev) => covers(ev, x, y)) ?? null;
   }
 
   anchor(id) {
